@@ -10,19 +10,22 @@ import { Dumbbell, Zap, TrendingUp, Plus } from 'lucide-react';
 
 export default function DashboardPage() {
   const router = useRouter();
-  const { isAuthenticated } = useAuthStore();
   const [readiness, setReadiness] = useState<any>(null);
   const [mesocycle, setMesocycle] = useState<any>(null);
   const [recentWorkouts, setRecentWorkouts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    if (!isAuthenticated()) {
-      router.push('/auth/login');
-      return;
-    }
-    loadData();
-  }, []);
+ const { isAuthenticated, _hydrated } = useAuthStore();
+
+useEffect(() => {
+  if (!_hydrated) return;
+  if (!isAuthenticated()) {
+    router.push('/auth/login');
+    return;
+  }
+  loadData();
+}, [_hydrated]);
+  
 
   async function loadData() {
     try {
@@ -70,37 +73,40 @@ export default function DashboardPage() {
           </p>
         </div>
 
-        {readiness ? (
-          <div className={`rounded-xl p-4 border ${
-            readiness.sessionMode === 'FULL'
-              ? 'bg-green-950 border-green-800'
-              : readiness.sessionMode === 'MODIFIED'
-              ? 'bg-amber-950 border-amber-800'
-              : 'bg-red-950 border-red-800'
-          }`}>
-            <div className="flex items-center gap-2 mb-1">
-              <Zap size={16} className="text-white" />
-              <span className="text-white text-sm font-medium">
-                {readiness.sessionModeLabel ?? readiness.sessionMode}
-              </span>
-            </div>
-            <p className="text-zinc-300 text-xs">
-              Readiness: {Math.round(readiness.sessionReadiness * 100)}%
-            </p>
-          </div>
-        ) : (
-          <div
-            className="rounded-xl p-4 border border-zinc-700 bg-zinc-900 cursor-pointer"
-            onClick={() => router.push('/readiness')}
-          >
-            <p className="text-white text-sm font-medium">
-              Complete your readiness check-in
-            </p>
-            <p className="text-zinc-400 text-xs mt-1">
-              Required before starting a session
-            </p>
-          </div>
-        )}
+        {readiness && readiness.sessionMode ? (
+  <div className={`rounded-xl p-4 border ${
+    readiness.sessionMode === 'FULL'
+      ? 'bg-green-950 border-green-800'
+      : readiness.sessionMode === 'MODIFIED'
+      ? 'bg-amber-950 border-amber-800'
+      : 'bg-red-950 border-red-800'
+  }`}>
+    <div className="flex items-center gap-2 mb-1">
+      <Zap size={16} className="text-white" />
+      <span className="text-white text-sm font-medium">
+        {readiness.sessionModeLabel ?? readiness.sessionMode}
+      </span>
+    </div>
+    <p className="text-zinc-300 text-xs">
+      Readiness: {Math.round(readiness.sessionReadiness * 100)}%
+    </p>
+  </div>
+) : (
+  <button
+    onClick={() => router.push('/readiness')}
+    className="w-full rounded-xl p-4 border border-amber-700 bg-amber-950 text-left"
+  >
+    <div className="flex items-center gap-2 mb-1">
+      <Zap size={16} className="text-amber-400" />
+      <span className="text-amber-200 text-sm font-medium">
+        Complete your readiness check-in
+      </span>
+    </div>
+    <p className="text-amber-300 text-xs">
+      Tap here to check in before your session
+    </p>
+  </button>
+)}
 
         <button
           onClick={startWorkout}

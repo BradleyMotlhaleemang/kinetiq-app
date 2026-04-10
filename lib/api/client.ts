@@ -1,31 +1,48 @@
-import axios from 'axios';
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 
-const api = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL,
-});
-
-api.interceptors.request.use((config) => {
+function getToken() {
   if (typeof window !== 'undefined') {
-    const token = sessionStorage.getItem('accessToken');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
+    return localStorage.getItem('accessToken');
+  }
+  return null;
+}
+
+async function request(method: string, path: string, body?: any) {
+  const token = getToken();
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  const res = await fetch(`${BASE_URL}${path}`, {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+
+  if (res.status === 401) {
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('accessToken');
+      localStorage.removeItem('refreshToken');
+      window.location.href = '/auth/login';
     }
   }
-  return config;
-});
 
-api.interceptors.response.use(
-  (response) => response,
-  async (error) => {
-    if (error.response?.status === 401) {
-      if (typeof window !== 'undefined') {
-        sessionStorage.removeItem('accessToken');
-        sessionStorage.removeItem('refreshToken');
-        window.location.href = '/login';
-      }
-    }
-    return Promise.reject(error);
-  },
-);
+  const data = await res.json().catch(() => ({}));
+
+  if (!res.ok) {
+    throw { response: { data, status: res.status } };
+  }
+
+  return { data };
+}
+
+const api = {
+  get: (path: string) => request('GET', path),
+  post: (path: string, body?: any) => request('POST', path, body),
+  patch: (path: string, body?: any) => request('PATCH', path, body),
+  put: (path: string, body?: any) => request('PUT', path, body),
+  delete: (path: string) => request('DELETE', path),
+};
 
 export default api;

@@ -5,33 +5,41 @@ interface AuthState {
   refreshToken: string | null;
   userId: string | null;
   email: string | null;
+  _hydrated: boolean;
   setTokens: (accessToken: string, refreshToken: string) => void;
   setUser: (userId: string, email: string) => void;
   logout: () => void;
   isAuthenticated: () => boolean;
+  hydrate: () => void;
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
-  accessToken: typeof window !== 'undefined'
-    ? sessionStorage.getItem('accessToken')
-    : null,
-  refreshToken: typeof window !== 'undefined'
-    ? sessionStorage.getItem('refreshToken')
-    : null,
+  accessToken: null,
+  refreshToken: null,
   userId: null,
   email: null,
+  _hydrated: false,
+
+  hydrate: () => {
+    if (typeof window === 'undefined') return;
+    set({
+      accessToken: localStorage.getItem('accessToken'),
+      refreshToken: localStorage.getItem('refreshToken'),
+      _hydrated: true,
+    });
+  },
 
   setTokens: (accessToken, refreshToken) => {
-    sessionStorage.setItem('accessToken', accessToken);
-    sessionStorage.setItem('refreshToken', refreshToken);
+    localStorage.setItem('accessToken', accessToken);
+    localStorage.setItem('refreshToken', refreshToken);
     set({ accessToken, refreshToken });
   },
 
   setUser: (userId, email) => set({ userId, email }),
 
   logout: () => {
-    sessionStorage.removeItem('accessToken');
-    sessionStorage.removeItem('refreshToken');
+    localStorage.removeItem('accessToken');
+    localStorage.removeItem('refreshToken');
     set({ accessToken: null, refreshToken: null, userId: null, email: null });
   },
 

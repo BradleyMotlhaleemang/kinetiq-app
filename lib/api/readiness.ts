@@ -8,7 +8,7 @@ export const readinessApi = {
     motivationScore: number;
     muscleReadinessScore: number;
     workoutId?: string;
-  }) => api.post('/readiness/check-in', data),
+  }) => api.post('/api/v1/readiness/check-in', data),
 
-  latest: () => api.get('/readiness/latest'),
+  latest: () => api.get('/api/v1/readiness/latest'),
 };
