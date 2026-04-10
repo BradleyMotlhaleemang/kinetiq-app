@@ -7,7 +7,6 @@ import './globals.css';
 import { useEffect } from 'react';
 import { useAuthStore } from '@/store/auth.store';
 
-
 const inter = Inter({ subsets: ['latin'] });
 
 const NAV_ITEMS = [
@@ -18,6 +17,8 @@ const NAV_ITEMS = [
   { href: '/profile', icon: User, label: 'Profile' },
 ];
 
+const HIDE_NAV_ON = ['/auth/login', '/auth/register', '/onboarding'];
+
 function StoreHydrator() {
   const hydrate = useAuthStore((s) => s.hydrate);
   useEffect(() => {
@@ -25,8 +26,6 @@ function StoreHydrator() {
   }, [hydrate]);
   return null;
 }
-
-const HIDE_NAV_ON = ['/auth/login', '/auth/register', '/onboarding'];
 
 function BottomNav() {
   const pathname = usePathname();
@@ -58,8 +57,6 @@ function BottomNav() {
   );
 }
 
-
-
 export default function RootLayout({
   children,
 }: {
@@ -68,11 +65,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={inter.className}>
-        <body className={inter.className}>
-  <StoreHydrator />
-  {children}
-  <BottomNav />
-</body>
+        <StoreHydrator />
         {children}
         <BottomNav />
       </body>
