@@ -1,13 +1,15 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Bell } from 'lucide-react';
 import { notificationsApi } from '@/lib/api/notifications';
+import { useNotificationsStore } from '@/store/notifications.store';
 
 export default function AppHeader({ title }: { title: string }) {
   const router = useRouter();
-  const [unreadCount, setUnreadCount] = useState(0);
+  const unreadCount = useNotificationsStore((s) => s.unreadCount);
+  const setUnreadCount = useNotificationsStore((s) => s.setUnreadCount);
 
   useEffect(() => {
     loadUnreadCount();

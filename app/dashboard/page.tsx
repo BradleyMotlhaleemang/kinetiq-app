@@ -119,6 +119,18 @@ useEffect(() => {
       Start New Session
     </button>
 
+    {!mesocycle && (
+      <button
+        onClick={() => router.push('/mesocycles/new')}
+        className="w-full rounded-xl p-4 border border-zinc-800 bg-zinc-900 text-left hover:bg-zinc-800 transition"
+      >
+        <p className="text-white font-medium text-sm">Create your training block</p>
+        <p className="text-zinc-400 text-xs mt-1">
+          We&apos;ll recommend a template based on your goal and experience.
+        </p>
+      </button>
+    )}
+
     {mesocycle && (
       <div className="rounded-xl bg-zinc-900 border border-zinc-800 p-4">
         <div className="flex items-center gap-2 mb-3">

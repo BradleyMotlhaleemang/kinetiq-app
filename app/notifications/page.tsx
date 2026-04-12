@@ -2,8 +2,17 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { Bell, Check, ChevronRight } from 'lucide-react';
 import { notificationsApi } from '@/lib/api/notifications';
-import { Bell, ChevronRight, Check } from 'lucide-react';
+import { useNotificationsStore } from '@/store/notifications.store';
+
+interface NotificationItem {
+  id: string;
+  type: string;
+  isRead: boolean;
+  createdAt: string;
+  redirectRoute?: string;
+}
 
 const TYPE_LABELS: Record<string, string> = {
   BIOFEEDBACK_PROMPT: 'Log your recovery',
@@ -37,17 +46,22 @@ const TYPE_COLORS: Record<string, string> = {
 
 export default function NotificationsPage() {
   const router = useRouter();
-  const [notifications, setNotifications] = useState<any[]>([]);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const setUnreadCount = useNotificationsStore((s) => s.setUnreadCount);
+  const decrementUnreadCount = useNotificationsStore((s) => s.decrementUnreadCount);
+  const clearUnreadCount = useNotificationsStore((s) => s.clearUnreadCount);
 
   useEffect(() => {
-    loadNotifications();
+    void loadNotifications();
   }, []);
 
   async function loadNotifications() {
     try {
       const res = await notificationsApi.getFeed();
-      setNotifications(res.data);
+      const feed = (res.data.data ?? []) as NotificationItem[];
+      setNotifications(feed);
+      setUnreadCount(feed.filter((notification) => !notification.isRead).length);
     } catch (err) {
       console.error(err);
     } finally {
@@ -55,16 +69,18 @@ export default function NotificationsPage() {
     }
   }
 
-  async function handleTap(notification: any) {
+  async function handleTap(notification: NotificationItem) {
     try {
       if (!notification.isRead) {
         await notificationsApi.markRead(notification.id);
         setNotifications((prev) =>
-          prev.map((n) =>
-            n.id === notification.id ? { ...n, isRead: true } : n,
+          prev.map((item) =>
+            item.id === notification.id ? { ...item, isRead: true } : item,
           ),
         );
+        decrementUnreadCount();
       }
+
       router.push(notification.redirectRoute ?? '/dashboard');
     } catch (err) {
       console.error(err);
@@ -72,12 +88,18 @@ export default function NotificationsPage() {
   }
 
   async function markAllRead() {
-    const unread = notifications.filter((n) => !n.isRead);
-    await Promise.all(unread.map((n) => notificationsApi.markRead(n.id)));
-    setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+    try {
+      await notificationsApi.markAllRead();
+      setNotifications((prev) =>
+        prev.map((notification) => ({ ...notification, isRead: true })),
+      );
+      clearUnreadCount();
+    } catch (err) {
+      console.error(err);
+    }
   }
 
-  const unreadCount = notifications.filter((n) => !n.isRead).length;
+  const unreadCount = notifications.filter((notification) => !notification.isRead).length;
 
   if (loading) {
     return (
@@ -90,22 +112,20 @@ export default function NotificationsPage() {
   return (
     <div className="min-h-screen bg-black px-4 pt-12 pb-24">
       <div className="max-w-sm mx-auto space-y-6">
-
         <div className="flex items-center justify-between">
           <div>
             <button
               onClick={() => router.back()}
               className="text-zinc-400 text-sm mb-2 block"
             >
-              ← Back
+              Back
             </button>
             <h1 className="text-2xl font-bold text-white">Notifications</h1>
             {unreadCount > 0 && (
-              <p className="text-zinc-400 text-sm mt-0.5">
-                {unreadCount} unread
-              </p>
+              <p className="text-zinc-400 text-sm mt-0.5">{unreadCount} unread</p>
             )}
           </div>
+
           {unreadCount > 0 && (
             <button
               onClick={markAllRead}
@@ -132,7 +152,7 @@ export default function NotificationsPage() {
                 onClick={() => handleTap(notification)}
                 className={`w-full text-left rounded-xl p-4 border transition hover:opacity-90 ${
                   TYPE_COLORS[notification.type] ?? 'border-zinc-700 bg-zinc-900'
-                } ${!notification.isRead ? 'opacity-100' : 'opacity-60'}`}
+                } ${notification.isRead ? 'opacity-60' : 'opacity-100'}`}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1">
@@ -148,19 +168,19 @@ export default function NotificationsPage() {
                       {TYPE_DESCRIPTIONS[notification.type] ?? 'Tap to view'}
                     </p>
                     <p className="text-zinc-500 text-xs mt-2">
-                      {new Date(notification.createdAt).toLocaleDateString(
-                        'en-US',
-                        {
-                          weekday: 'short',
-                          month: 'short',
-                          day: 'numeric',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        },
-                      )}
+                      {new Date(notification.createdAt).toLocaleDateString('en-US', {
+                        weekday: 'short',
+                        month: 'short',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
                     </p>
                   </div>
-                  <ChevronRight size={16} className="text-zinc-400 flex-shrink-0 mt-0.5" />
+                  <ChevronRight
+                    size={16}
+                    className="text-zinc-400 flex-shrink-0 mt-0.5"
+                  />
                 </div>
               </button>
             ))}

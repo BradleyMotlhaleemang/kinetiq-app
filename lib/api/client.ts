@@ -2,7 +2,7 @@ const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 
 function getToken() {
   if (typeof window !== 'undefined') {
-    return localStorage.getItem('accessToken');
+    return sessionStorage.getItem('accessToken');
   }
   return null;
 }
@@ -22,8 +22,8 @@ async function request(method: string, path: string, body?: any) {
 
   if (res.status === 401) {
     if (typeof window !== 'undefined') {
-      localStorage.removeItem('accessToken');
-      localStorage.removeItem('refreshToken');
+      sessionStorage.removeItem('accessToken');
+      sessionStorage.removeItem('refreshToken');
       window.location.href = '/auth/login';
     }
   }
