@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import AppHeader from '@/components/AppHeader';
 import { biofeedbackApi } from '@/lib/api/biofeedback';
 import { workoutsApi } from '@/lib/api/workouts';
 import { useAuthStore } from '@/store/auth.store';
@@ -164,18 +165,10 @@ function updateScale(
   return (
     <div className="min-h-screen bg-black px-4 pt-12 pb-24">
       <div className="max-w-sm mx-auto space-y-8">
-        <div>
-          <button
-            onClick={() => router.back()}
-            className="text-zinc-400 text-sm mb-4 block"
-          >
-            Back
-          </button>
-          <h1 className="text-2xl font-bold text-white">Post-session biofeedback</h1>
-          <p className="text-zinc-400 text-sm mt-1">
-            Log how your body feels so recovery and progression stay accurate.
-          </p>
-        </div>
+        <AppHeader title="Recovery Log" showBack />
+        <p className="text-zinc-400 text-sm">
+          Log how your body feels so recovery and progression stay accurate.
+        </p>
 
         {latestWorkout && (
           <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-4">

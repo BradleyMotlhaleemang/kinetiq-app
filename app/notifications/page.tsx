@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import AppHeader from '@/components/AppHeader';
 import { Bell, Check, ChevronRight } from 'lucide-react';
 import { notificationsApi } from '@/lib/api/notifications';
 import { useNotificationsStore } from '@/store/notifications.store';
@@ -112,21 +113,10 @@ export default function NotificationsPage() {
   return (
     <div className="min-h-screen bg-black px-4 pt-12 pb-24">
       <div className="max-w-sm mx-auto space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <button
-              onClick={() => router.back()}
-              className="text-zinc-400 text-sm mb-2 block"
-            >
-              Back
-            </button>
-            <h1 className="text-2xl font-bold text-white">Notifications</h1>
-            {unreadCount > 0 && (
-              <p className="text-zinc-400 text-sm mt-0.5">{unreadCount} unread</p>
-            )}
-          </div>
-
-          {unreadCount > 0 && (
+        <AppHeader title="Notifications" showBack backHref="/dashboard" />
+        {unreadCount > 0 && (
+          <div className="flex items-center justify-between">
+            <p className="text-zinc-400 text-sm">{unreadCount} unread</p>
             <button
               onClick={markAllRead}
               className="flex items-center gap-1 text-zinc-400 text-xs border border-zinc-700 rounded-lg px-3 py-2 hover:bg-zinc-900 transition"
@@ -134,8 +124,8 @@ export default function NotificationsPage() {
               <Check size={12} />
               Mark all read
             </button>
-          )}
-        </div>
+          </div>
+        )}
 
         {notifications.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 space-y-4">

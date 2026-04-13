@@ -63,59 +63,60 @@ useEffect(() => {
   }
 
  return (
-  <div className="min-h-screen bg-black text-white p-4 space-y-4">
-    <AppHeader title="Dashboard" />
+  <div style={{ minHeight: '100dvh', backgroundColor: '#111318', paddingBottom: '96px' }}>
+    {/* Background glow */}
+    <div style={{ position: 'fixed', top: 0, right: 0, width: '500px', height: '500px', background: 'rgba(177,197,255,0.04)', filter: 'blur(120px)', borderRadius: '50%', transform: 'translate(30%, -30%)', pointerEvents: 'none', zIndex: 0 }} />
 
-    <p className="text-zinc-400 text-sm -mt-4 px-1">
-      {new Date().toLocaleDateString('en-US', {
-        weekday: 'long',
-        month: 'long',
-        day: 'numeric',
-      })}
-    </p>
+    <div style={{ maxWidth: '480px', margin: '0 auto', padding: '0 20px', position: 'relative', zIndex: 1 }}>
+      <AppHeader />
+
+      <p className="label-sm" style={{ color: '#444650', paddingLeft: '2px', marginBottom: '24px' }}>
+        {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+      </p>
+
+      {/* rest of dashboard content */}
 
     {readiness && readiness.sessionMode ? (
-      <div
-        className={`rounded-xl p-4 border ${
-          readiness.sessionMode === 'FULL'
-            ? 'bg-green-950 border-green-800'
-            : readiness.sessionMode === 'MODIFIED'
-            ? 'bg-amber-950 border-amber-800'
-            : 'bg-red-950 border-red-800'
-        }`}
-      >
-        <div className="flex items-center gap-2 mb-1">
-          <Zap size={16} className="text-white" />
-          <span className="text-white text-sm font-medium">
-            {readiness.sessionModeLabel ?? readiness.sessionMode}
-          </span>
-        </div>
-        <p className="text-zinc-300 text-xs">
+      <div style={{
+        borderRadius: '0.125rem',
+        borderTopRightRadius: '0.75rem',
+        padding: '16px',
+        backgroundColor: readiness.sessionMode === 'FULL' ? '#0a1f10' : readiness.sessionMode === 'MODIFIED' ? '#1a1400' : '#1a0a08',
+        borderLeft: `2px solid ${readiness.sessionMode === 'FULL' ? '#59d8de' : readiness.sessionMode === 'MODIFIED' ? '#a2e7ff' : '#ffb4ab'}`,
+        marginBottom: '16px',
+      }}>
+        <p style={{ fontFamily: "'Space Grotesk'", fontSize: '0.75rem', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: readiness.sessionMode === 'FULL' ? '#59d8de' : readiness.sessionMode === 'MODIFIED' ? '#a2e7ff' : '#ffb4ab', marginBottom: '4px' }}>
+          {readiness.sessionModeLabel ?? readiness.sessionMode}
+        </p>
+        <p style={{ fontFamily: 'Manrope', fontSize: '0.75rem', color: '#8e909c' }}>
           Readiness: {Math.round(readiness.sessionReadiness * 100)}%
         </p>
       </div>
     ) : (
-      <button
+      <div
         onClick={() => router.push('/readiness')}
-        className="w-full rounded-xl p-4 border border-amber-700 bg-amber-950 text-left"
+        style={{
+          backgroundColor: '#1a1c20',
+          borderTopRightRadius: '0.75rem',
+          borderBottomLeftRadius: '0px',
+          borderTopLeftRadius: '0.125rem',
+          borderBottomRightRadius: '0.125rem',
+          padding: '16px',
+          cursor: 'pointer',
+          marginBottom: '16px',
+          borderLeft: '2px solid #444650',
+        }}
       >
-        <div className="flex items-center gap-2 mb-1">
-          <Zap size={16} className="text-amber-400" />
-          <span className="text-amber-200 text-sm font-medium">
-            Complete your readiness check-in
-          </span>
-        </div>
-        <p className="text-amber-300 text-xs">
-          Tap here to check in before your session
+        <p style={{ fontFamily: "'Space Grotesk'", fontSize: '0.875rem', fontWeight: 600, color: '#e2e2e8', marginBottom: '4px' }}>
+          Complete readiness check-in
         </p>
-      </button>
+        <p style={{ fontFamily: 'Manrope', fontSize: '0.75rem', color: '#8e909c' }}>
+          Required before starting a session
+        </p>
+      </div>
     )}
 
-    <button
-      onClick={startWorkout}
-      className="w-full bg-white text-black font-semibold py-4 rounded-xl flex items-center justify-center gap-2 hover:bg-zinc-200 transition"
-    >
-      <Plus size={18} />
+    <button onClick={startWorkout} className="btn-primary" style={{ marginBottom: '24px', color: '#002c70' }}>
       Start New Session
     </button>
 
@@ -185,6 +186,7 @@ useEffect(() => {
         </div>
       </div>
     )}
+    </div>
   </div>
 );
 }

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import AppHeader from '@/components/AppHeader';
 import { useAuthStore } from '@/store/auth.store';
 import api from '@/lib/api/client';
 import { LogOut, ChevronRight, User, Target, Activity } from 'lucide-react';
@@ -44,9 +45,7 @@ export default function ProfilePage() {
     <div className="min-h-screen bg-black px-4 pt-12 pb-24">
       <div className="max-w-sm mx-auto space-y-6">
 
-        <div>
-          <h1 className="text-2xl font-bold text-white">Profile</h1>
-        </div>
+        <AppHeader title="Profile" />
 
         <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 flex items-center gap-4">
           <div className="w-14 h-14 rounded-full bg-zinc-700 flex items-center justify-center">

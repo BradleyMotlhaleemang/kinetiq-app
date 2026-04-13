@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import AppHeader from '@/components/AppHeader';
 import { readinessApi } from '@/lib/api/readiness';
 
 const SCORES = [1, 2, 3, 4, 5];
@@ -104,14 +105,8 @@ export default function ReadinessPage() {
   return (
     <div className="min-h-screen bg-black px-4 pt-12 pb-24">
       <div className="max-w-sm mx-auto space-y-8">
+        <AppHeader title="Readiness Check-in" showBack />
         <div>
-          <button
-            onClick={() => router.back()}
-            className="text-zinc-400 text-sm mb-4 block"
-          >
-            ← Back
-          </button>
-          <h1 className="text-2xl font-bold text-white">Readiness Check-in</h1>
           <p className="text-zinc-400 text-sm mt-1">
             How are you feeling today?
           </p>

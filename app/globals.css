@@ -1,26 +1,190 @@
-@import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Manrope:wght@300;400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --surface: #111318;
+  --surface-low: #1a1c20;
+  --surface-container: #1e2024;
+  --surface-high: #282a2e;
+  --surface-highest: #333539;
+  --surface-lowest: #0c0e12;
+  --primary: #b1c5ff;
+  --primary-container: #002560;
+  --on-primary: #002c70;
+  --secondary: #a2e7ff;
+  --tertiary: #59d8de;
+  --on-surface: #e2e2e8;
+  --on-surface-variant: #c5c6d2;
+  --outline: #8e909c;
+  --outline-variant: #444650;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: var(--surface);
+  color: var(--on-surface);
+  font-family: 'Manrope', sans-serif;
+  min-height: 100dvh;
+}
+
+/* Typography scale */
+.display-lg {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 3.5rem;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+}
+
+.display-sm {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 2.25rem;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+}
+
+.headline {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 1.5rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.label-lg {
+  font-family: 'Manrope', sans-serif;
+  font-size: 0.875rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+}
+
+.label-md {
+  font-family: 'Manrope', sans-serif;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.label-sm {
+  font-family: 'Manrope', sans-serif;
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+/* Asymmetric card — signature component */
+.asymmetric-card {
+  border-top-right-radius: 0.75rem;
+  border-bottom-left-radius: 0px;
+  border-top-left-radius: 0.125rem;
+  border-bottom-right-radius: 0.125rem;
+}
+
+/* Gradient primary button */
+.btn-primary {
+  background: linear-gradient(45deg, #b1c5ff, #002560);
+  color: #002c70;
+  font-family: 'Manrope', sans-serif;
+  font-weight: 700;
+  font-size: 0.75rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  border: none;
+  cursor: pointer;
+  border-radius: 0.125rem;
+  padding: 14px 24px;
+  width: 100%;
+  transition: opacity 0.2s ease;
+}
+
+.btn-primary:hover { opacity: 0.9; }
+.btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* Ghost button */
+.btn-ghost {
+  background: transparent;
+  color: var(--on-surface);
+  font-family: 'Manrope', sans-serif;
+  font-weight: 700;
+  font-size: 0.75rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  border: 1px solid rgba(142, 144, 156, 0.2);
+  cursor: pointer;
+  border-radius: 0.125rem;
+  padding: 14px 24px;
+  width: 100%;
+  transition: background 0.2s ease;
+}
+
+.btn-ghost:hover { background: var(--surface-high); }
+
+/* Kinetic blur overlay */
+.kinetic-blur {
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+}
+
+/* Ambient glow for floating elements */
+.ambient-glow {
+  box-shadow: 0 24px 48px rgba(226, 226, 232, 0.04);
+}
+
+/* Input fields */
+.k-input {
+  background: var(--surface-lowest);
+  border: none;
+  border-bottom: 2px solid var(--outline-variant);
+  color: var(--on-surface);
+  font-family: 'Manrope', sans-serif;
+  font-size: 0.875rem;
+  padding: 12px 0;
+  width: 100%;
+  outline: none;
+  transition: border-color 0.2s ease;
+}
+
+.k-input:focus {
+  border-bottom-color: var(--primary);
+}
+
+.k-input::placeholder {
+  color: var(--outline);
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: var(--surface-low); }
+::-webkit-scrollbar-thumb { background: var(--outline-variant); border-radius: 2px; }
+
+/* Selection */
+::selection {
+  background: var(--primary);
+  color: var(--on-primary);
+}
+
+/* Remove default button styles */
+button { background: none; border: none; cursor: pointer; }
+
+/* Page transition */
+main {
+  animation: pageIn 0.2s ease;
+}
+
+@keyframes pageIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
 }
