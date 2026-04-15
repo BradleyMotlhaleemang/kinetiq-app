@@ -115,6 +115,18 @@ export default function ProfilePage() {
               <ChevronRight size={16} className="text-zinc-400" />
             </button>
 
+
+          <button
+            onClick={() => router.push('/weekly-feedback')}
+            className="w-full px-4 py-4 flex items-center justify-between hover:bg-zinc-800 transition"
+            style={{ backgroundColor: 'transparent', border: 'none', cursor: 'pointer', width: '100%' }}
+            >
+             <p style={{ fontFamily: 'Manrope', fontSize: '0.875rem', color: '#e2e2e8' }}>
+           Weekly Check-in
+           </p>
+          <ChevronRight size={16} color="#444650" />
+          </button>  
+
             <button
               onClick={handleLogout}
               className="w-full px-4 py-4 flex items-center gap-3 hover:bg-zinc-800 transition"

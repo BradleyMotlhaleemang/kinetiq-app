@@ -29,11 +29,32 @@ const NAV_ITEMS = [
   { href: '/profile', icon: User, label: 'Profile' },
 ];
 
-const HIDE_NAV_ON = ['/auth/login', '/auth/register', '/onboarding'];
+const HIDE_NAV_ON = [
+  '/auth/login',
+  '/auth/register',
+  '/auth/forgot-password',
+  '/auth/reset-password',
+  '/onboarding',
+  '/welcome',
+  '/how-it-works',
+  '/weekly-feedback',
+];
 
 function StoreHydrator() {
   const hydrate = useAuthStore((s) => s.hydrate);
-  useEffect(() => { hydrate(); }, [hydrate]);
+  const router = useRouter();
+  const pathname = usePathname();
+
+  useEffect(() => {
+    hydrate();
+    if (typeof window !== 'undefined') {
+      const seen = sessionStorage.getItem('hasSeenOnboarding');
+      if (!seen && pathname === '/') {
+        router.replace('/welcome');
+      }
+    }
+  }, [hydrate, pathname, router]);
+
   return null;
 }
 

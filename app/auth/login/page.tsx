@@ -4,7 +4,6 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { authApi } from '@/lib/api/auth';
 import { useAuthStore } from '@/store/auth.store';
-import Image from 'next/image';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -35,7 +34,15 @@ export default function LoginPage() {
 
         {/* Logo */}
         <div style={{ marginBottom: '48px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          <Image src="/images/dynamic_logo.png" alt="Kinetiq" width={140} height={28} style={{ objectFit: 'contain', objectPosition: 'left' }} priority />
+          <div style={{ display: 'flex', gap: '2px', fontSize: '1.5rem', fontWeight: 700, letterSpacing: '-0.04em', fontFamily: "'Space Grotesk'" }}>
+            <span style={{ color: '#b1c5ff' }}>K</span>
+            <span style={{ color: '#b1c5ff' }}>I</span>
+            <span style={{ color: '#b1c5ff' }}>N</span>
+            <span style={{ color: '#b1c5ff' }}>E</span>
+            <span style={{ color: '#b1c5ff' }}>T</span>
+            <span style={{ color: '#b1c5ff' }}>I</span>
+            <span style={{ color: '#59d8de' }}>Q</span>
+          </div>
           <p className="label-sm" style={{ color: '#444650' }}>Elite Performance Labs</p>
         </div>
 
@@ -72,6 +79,12 @@ export default function LoginPage() {
               placeholder="••••••••"
               required
             />
+          </div>
+
+          <div style={{ textAlign: 'right', marginTop: '-16px' }}>
+            <a href="/auth/forgot-password" style={{ fontFamily: 'Manrope', fontSize: '0.75rem', color: '#444650', textDecoration: 'none' }}>
+              Forgot password?
+            </a>
           </div>
 
           {error && (
