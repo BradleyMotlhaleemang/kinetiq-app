@@ -88,7 +88,7 @@ export default function WeeklyFeedbackPage() {
     setLoading(true);
     setError('');
     try {
-      await api.post('/feedback/weekly', {
+      await api.post('/api/v1/feedback/weekly', {
         weekNumber: getCurrentWeekNumber(),
         motivationScore,
         fatiguePerception,

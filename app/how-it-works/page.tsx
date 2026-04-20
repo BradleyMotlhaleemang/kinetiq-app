@@ -4,7 +4,7 @@ import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import OnboardingLayout from '@/components/OnboardingLayout';
 import StepDots from '@/components/StepDots';
-import { ONBOARDING_STEPS } from '@/lib/onboarding-steps';
+import { ONBOARDING_STEPS } from '@/lib/api/onboarding-steps';
 
 export default function HowItWorksPage() {
   const router = useRouter();

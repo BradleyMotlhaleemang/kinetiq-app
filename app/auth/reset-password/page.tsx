@@ -23,7 +23,7 @@ function ResetPasswordForm() {
 
     setLoading(true);
     try {
-      await api.post('/auth/reset-password', { token, newPassword: password });
+      await api.post('/api/v1/auth/reset-password', { token, newPassword: password });
       setSuccess(true);
     } catch {
       setError('This reset link is invalid or has expired.');

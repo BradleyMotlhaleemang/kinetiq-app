@@ -40,4 +40,9 @@ export const mesocyclesApi = {
 
   active: () => api.get('/api/v1/mesocycles/active'),
   recommend: () => api.get('/api/v1/mesocycles/recommend'),
+  all: () => api.get('/api/v1/mesocycles/all'),
+
+  findOne: (id: string) => api.get(`/api/v1/mesocycles/${id}`),
+  volumeStatus: (id: string) => api.get(`/api/v1/mesocycles/${id}/volume-status`),
+  close: (id: string) => api.patch(`/api/v1/mesocycles/${id}/close`),
 };

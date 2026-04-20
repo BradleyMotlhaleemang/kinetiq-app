@@ -34,7 +34,7 @@ export default function OnboardingPage() {
     setLoading(true);
     setError('');
     try {
-      await api.patch('/users/me/onboarding', {
+      await api.patch('/api/v1/users/me/onboarding', {
         goalMode,
         experienceLevel: experienceLevel || 'INTERMEDIATE',
         bodyweightKg: bodyweightKg ? parseFloat(bodyweightKg) : undefined,

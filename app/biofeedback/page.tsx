@@ -161,7 +161,7 @@ function BiofeedbackForm() {
 
   async function loadMusclesTrained() {
     try {
-      const res = await api.get(`/biofeedback/muscles/${workoutId}`);
+      const res = await api.get(`/api/v1/biofeedback/muscles/${workoutId}`);
       const muscles = res.data.musclesTrainedToday ?? [];
       setActiveMuscles(muscles.length > 0 ? muscles : MUSCLES.slice(0, 3));
     } catch {
@@ -186,7 +186,7 @@ function BiofeedbackForm() {
         muscleGroup: m,
       }));
 
-      await api.post('/biofeedback', {
+      await api.post('/api/v1/biofeedback', {
         workoutId,
         sorenessLog: Object.fromEntries(
           muscleGroupFeedback.map((m) => [m.muscleGroup,

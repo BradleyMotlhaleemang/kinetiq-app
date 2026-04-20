@@ -25,9 +25,9 @@ export default function AnalyticsPage() {
   async function loadData() {
     try {
       const [strengthRes, volumeRes, insightsRes] = await Promise.allSettled([
-        api.get('/analytics/strength/trends'),
-        api.get('/analytics/volume/weekly'),
-        api.get('/analytics/insights'),
+        api.get('/api/v1/analytics/strength/trends'),
+        api.get('/api/v1/analytics/volume/weekly'),
+        api.get('/api/v1/analytics/insights'),
       ]);
 
       if (strengthRes.status === 'fulfilled') setStrengthTrends(strengthRes.value.data);

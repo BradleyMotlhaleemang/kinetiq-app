@@ -1,3 +1,4 @@
+/** API origin only — request paths must include `/api/v1/...` (Nest `setGlobalPrefix('api/v1')`). */
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 
 function getToken() {

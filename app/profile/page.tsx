@@ -19,7 +19,7 @@ export default function ProfilePage() {
 
   async function loadUser() {
     try {
-      const res = await api.get('/users/me');
+      const res = await api.get('/api/v1/users/me');
       setUser(res.data);
     } catch {
       router.push('/auth/login');
