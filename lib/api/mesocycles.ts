@@ -25,7 +25,7 @@ export interface RecommendedTemplate {
 }
 
 export interface MesocycleRecommendation {
-  recommended: RecommendedTemplate;
+  recommended: RecommendedTemplate | null;
   alternatives: RecommendedTemplate[];
   rationale: string;
   profile: {

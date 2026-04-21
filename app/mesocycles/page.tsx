@@ -5,6 +5,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import AppHeader from '@/components/AppHeader';
 import { mesocyclesApi } from '@/lib/api/mesocycles';
 import { Plus, ChevronRight, CheckCircle, Clock, Zap } from 'lucide-react';
+import { MUSCLE_FOCUS_COLOR, TEMPLATE_CATALOG, SPLIT_LABELS } from '@/lib/templates/catalog';
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: any }> = {
   ACTIVE: { label: 'Active', color: '#59d8de', icon: Zap },
@@ -137,6 +138,25 @@ export default function MesocyclesPage() {
                 </div>
               </section>
             )}
+
+            <section style={{ marginTop: '32px' }}>
+              <p className="label-sm" style={{ color: '#444650', marginBottom: '12px' }}>
+                Templates
+              </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {TEMPLATE_CATALOG.map((template) => (
+                  <div key={template.id} style={{ position: 'relative', backgroundColor: '#1a1c20', border: '1px solid #282a2e', borderRadius: '8px', padding: '12px 12px 12px 16px' }}>
+                    <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '4px', borderRadius: '8px 0 0 8px', backgroundColor: MUSCLE_FOCUS_COLOR[template.muscleFocus] }} />
+                    <p style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: '0.92rem', fontWeight: 600, color: '#e2e2e8' }}>
+                      {template.programName}
+                    </p>
+                    <p style={{ fontFamily: 'Manrope', fontSize: '0.72rem', color: '#8e909c', marginTop: '2px' }}>
+                      {SPLIT_LABELS[template.splitType]} • {template.weeklyStructure.length} days/week • {template.durationWeeks} weeks
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </section>
           </>
         )}
       </div>

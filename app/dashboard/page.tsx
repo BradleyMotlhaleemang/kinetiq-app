@@ -6,7 +6,7 @@ import { useAuthStore } from '@/store/auth.store';
 import { mesocyclesApi } from '@/lib/api/mesocycles';
 import { readinessApi } from '@/lib/api/readiness';
 import { workoutsApi } from '@/lib/api/workouts';
-import { Dumbbell, Zap, TrendingUp, Plus } from 'lucide-react';
+import { BarChart3, Dumbbell, Play, Trophy, UserRound } from 'lucide-react';
 import AppHeader from '@/components/AppHeader';
 
 export default function DashboardPage() {
@@ -16,17 +16,16 @@ export default function DashboardPage() {
   const [recentWorkouts, setRecentWorkouts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
- const { isAuthenticated, hydrated } = useAuthStore();
+  const { isAuthenticated, hydrated } = useAuthStore();
 
-useEffect(() => {
-  if (!hydrated) return;
-  if (!isAuthenticated()) {
-    router.push('/auth/login');
-    return;
-  }
-  loadData();
-}, [hydrated]);
-  
+  useEffect(() => {
+    if (!hydrated) return;
+    if (!isAuthenticated()) {
+      router.push('/auth/login');
+      return;
+    }
+    loadData();
+  }, [hydrated]);
 
   async function loadData() {
     try {
@@ -45,148 +44,125 @@ useEffect(() => {
     }
   }
 
- async function startWorkout() {
-  try {
-    const res = await workoutsApi.create({ mesocycleId: mesocycle?.id });
-    router.push(`/workout/${res.data.id}`);
-  } catch (err) {
-    console.error(err);
+  async function startWorkout() {
+    try {
+      const res = await workoutsApi.create({ mesocycleId: mesocycle?.id });
+      router.push(`/workout/${res.data.id}`);
+    } catch (err) {
+      console.error(err);
+    }
   }
-}
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-black flex items-center justify-center">
-        <div className="text-zinc-400 text-sm">Loading...</div>
+      <div style={{ minHeight: '100dvh', backgroundColor: 'var(--surface)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ color: 'var(--outline)', fontFamily: 'Manrope', fontSize: '0.875rem' }}>Loading...</div>
       </div>
     );
   }
 
- return (
-  <div style={{ minHeight: '100dvh', backgroundColor: '#111318', paddingBottom: '96px' }}>
-    {/* Background glow */}
-    <div style={{ position: 'fixed', top: 0, right: 0, width: '500px', height: '500px', background: 'rgba(177,197,255,0.04)', filter: 'blur(120px)', borderRadius: '50%', transform: 'translate(30%, -30%)', pointerEvents: 'none', zIndex: 0 }} />
+  const activeWeek = mesocycle?.currentWeek ?? 1;
+  const totalWeeks = mesocycle?.totalWeeks ?? 8;
+  const progressPct = Math.round((activeWeek / totalWeeks) * 100);
+  const suggestedDay = recentWorkouts.length > 0 ? 'Day 2 - Week 1' : 'Day 1 - Week 1';
 
-    <div style={{ maxWidth: '480px', margin: '0 auto', padding: '0 20px', position: 'relative', zIndex: 1 }}>
-      <AppHeader />
+  return (
+    <div style={{ minHeight: '100dvh', backgroundColor: 'var(--surface)', paddingBottom: '96px' }}>
+      <div style={{ maxWidth: '980px', margin: '0 auto', padding: '0 20px' }}>
+        <AppHeader />
 
-      <p className="label-sm" style={{ color: '#444650', paddingLeft: '2px', marginBottom: '24px' }}>
-        {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
-      </p>
+        <main style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <section style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <p className="label-sm" style={{ color: 'var(--primary)' }}>
+              Performance Protocol Activated
+            </p>
+            <h1 style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: '2rem', fontWeight: 700, lineHeight: 1.05, color: 'var(--on-surface)' }}>
+              Welcome Barcola,
+              <br />
+              <span style={{ color: 'var(--primary)', fontStyle: 'italic' }}>Lightweight!!!</span>
+            </h1>
+            <p style={{ fontFamily: 'Manrope', fontSize: '0.75rem', color: 'var(--outline)' }}>
+              {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+            </p>
+          </section>
 
-      {/* rest of dashboard content */}
-
-    {readiness && readiness.sessionMode ? (
-      <div style={{
-        borderRadius: '0.125rem',
-        borderTopRightRadius: '0.75rem',
-        padding: '16px',
-        backgroundColor: readiness.sessionMode === 'FULL' ? '#0a1f10' : readiness.sessionMode === 'MODIFIED' ? '#1a1400' : '#1a0a08',
-        borderLeft: `2px solid ${readiness.sessionMode === 'FULL' ? '#59d8de' : readiness.sessionMode === 'MODIFIED' ? '#a2e7ff' : '#ffb4ab'}`,
-        marginBottom: '16px',
-      }}>
-        <p style={{ fontFamily: "'Space Grotesk'", fontSize: '0.75rem', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: readiness.sessionMode === 'FULL' ? '#59d8de' : readiness.sessionMode === 'MODIFIED' ? '#a2e7ff' : '#ffb4ab', marginBottom: '4px' }}>
-          {readiness.sessionModeLabel ?? readiness.sessionMode}
-        </p>
-        <p style={{ fontFamily: 'Manrope', fontSize: '0.75rem', color: '#8e909c' }}>
-          Readiness: {Math.round(readiness.sessionReadiness * 100)}%
-        </p>
-      </div>
-    ) : (
-      <div
-        onClick={() => router.push('/readiness')}
-        style={{
-          backgroundColor: '#1a1c20',
-          borderTopRightRadius: '0.75rem',
-          borderBottomLeftRadius: '0px',
-          borderTopLeftRadius: '0.125rem',
-          borderBottomRightRadius: '0.125rem',
-          padding: '16px',
-          cursor: 'pointer',
-          marginBottom: '16px',
-          borderLeft: '2px solid #444650',
-        }}
-      >
-        <p style={{ fontFamily: "'Space Grotesk'", fontSize: '0.875rem', fontWeight: 600, color: '#e2e2e8', marginBottom: '4px' }}>
-          Complete readiness check-in
-        </p>
-        <p style={{ fontFamily: 'Manrope', fontSize: '0.75rem', color: '#8e909c' }}>
-          Required before starting a session
-        </p>
-      </div>
-    )}
-
-    <button onClick={startWorkout} className="btn-primary" style={{ marginBottom: '24px', color: '#002c70' }}>
-      Start New Session
-    </button>
-
-    {!mesocycle && (
-      <button
-        onClick={() => router.push('/mesocycles/new')}
-        className="w-full rounded-xl p-4 border border-zinc-800 bg-zinc-900 text-left hover:bg-zinc-800 transition"
-      >
-        <p className="text-white font-medium text-sm">Create your training block</p>
-        <p className="text-zinc-400 text-xs mt-1">
-          We&apos;ll recommend a template based on your goal and experience.
-        </p>
-      </button>
-    )}
-
-    {mesocycle && (
-      <div className="rounded-xl bg-zinc-900 border border-zinc-800 p-4">
-        <div className="flex items-center gap-2 mb-3">
-          <TrendingUp size={16} className="text-zinc-400" />
-          <span className="text-zinc-300 text-sm font-medium">
-            Current Block
-          </span>
-        </div>
-        <p className="text-white font-medium">{mesocycle.name}</p>
-        <p className="text-zinc-400 text-xs mt-1">
-          Week {mesocycle.currentWeek} of {mesocycle.totalWeeks} —{' '}
-          {mesocycle.statusLabel ?? mesocycle.status}
-        </p>
-      </div>
-    )}
-
-    {recentWorkouts.length > 0 && (
-      <div>
-        <div className="flex items-center gap-2 mb-3">
-          <Dumbbell size={16} className="text-zinc-400" />
-          <span className="text-zinc-300 text-sm font-medium">
-            Recent Sessions
-          </span>
-        </div>
-
-        <div className="space-y-2">
-          {recentWorkouts.map((workout) => (
-            <div
-              key={workout.id}
-              className="rounded-xl bg-zinc-900 border border-zinc-800 p-4"
-            >
-              <div className="flex justify-between items-center">
-                <div>
-                  <p className="text-white text-sm font-medium">
-                    {workout.splitDayLabel ?? 'Training Session'}
-                  </p>
-                  <p className="text-zinc-400 text-xs mt-0.5">
-                    {new Date(workout.completedAt).toLocaleDateString()}
-                  </p>
-                </div>
-                <div className="text-right">
-                  <p className="text-white text-sm">
-                    {workout.totalSets} sets
-                  </p>
-                  <p className="text-zinc-400 text-xs">
-                    {Math.round(workout.totalVolume ?? 0)} kg vol
-                  </p>
-                </div>
+          <section style={{ backgroundColor: 'var(--surface-container)', border: '1px solid var(--surface-high)', borderLeft: '4px solid var(--primary)', borderRadius: '12px', padding: '16px' }}>
+            <p className="label-sm" style={{ color: 'var(--outline)' }}>Current Mesocycle</p>
+            <p style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: '1.1rem', color: 'var(--on-surface)', fontWeight: 600, marginTop: '4px' }}>
+              {mesocycle?.name ?? 'No active block'}
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '8px', alignItems: 'center' }}>
+              <p style={{ fontFamily: 'Manrope', fontSize: '0.75rem', color: 'var(--outline)' }}>
+                Week {activeWeek} of {totalWeeks}
+              </p>
+              <div style={{ width: '120px', height: '6px', borderRadius: '9999px', backgroundColor: 'var(--surface-high)' }}>
+                <div style={{ width: `${progressPct}%`, height: '100%', borderRadius: '9999px', backgroundColor: 'var(--primary)' }} />
               </div>
             </div>
-          ))}
-        </div>
+          </section>
+
+          <button onClick={startWorkout} className="btn-primary" style={{ color: 'var(--on-primary)', borderRadius: '16px', padding: '18px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>Start Session</span>
+            <Play size={18} />
+          </button>
+
+          <section style={{ backgroundColor: 'var(--surface-container)', border: '1px solid var(--surface-high)', borderRadius: '12px', padding: '14px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+              <Dumbbell size={14} color="var(--outline)" />
+              <p className="label-sm" style={{ color: 'var(--outline)' }}>Recent Workouts</p>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {recentWorkouts.slice(0, 3).map((workout) => (
+                <div key={workout.id} style={{ backgroundColor: 'var(--surface-high)', borderRadius: '10px', padding: '10px', display: 'flex', justifyContent: 'space-between' }}>
+                  <div>
+                    <p style={{ fontFamily: 'Manrope', fontSize: '0.82rem', color: 'var(--on-surface)' }}>{workout.splitDayLabel ?? 'Training Session'}</p>
+                    <p style={{ fontFamily: 'Manrope', fontSize: '0.68rem', color: 'var(--outline)' }}>{new Date(workout.completedAt).toLocaleDateString()}</p>
+                  </div>
+                  <p style={{ fontFamily: 'Manrope', fontSize: '0.72rem', color: 'var(--outline)' }}>{workout.totalSets} sets</p>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+            <div style={{ backgroundColor: 'var(--surface-container)', border: '1px solid var(--surface-high)', borderRadius: '12px', padding: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                <Trophy size={14} color="var(--secondary)" />
+                <p className="label-sm" style={{ color: 'var(--outline)' }}>Achievements</p>
+              </div>
+              <p style={{ fontFamily: 'Manrope', fontSize: '0.8rem', color: 'var(--on-surface)' }}>Deadlift 220kg</p>
+              <p style={{ fontFamily: 'Manrope', fontSize: '0.68rem', color: 'var(--secondary)' }}>New PR</p>
+            </div>
+
+            <div style={{ backgroundColor: 'var(--surface-container)', border: '1px solid var(--surface-high)', borderRadius: '12px', padding: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                <BarChart3 size={14} color="var(--primary)" />
+                <p className="label-sm" style={{ color: 'var(--outline)' }}>Performance Insight</p>
+              </div>
+              <p style={{ fontFamily: 'Manrope', fontSize: '0.8rem', color: 'var(--on-surface)' }}>Chest volume +5%</p>
+              <p style={{ fontFamily: 'Manrope', fontSize: '0.68rem', color: 'var(--outline)' }}>Strong weekly trend</p>
+            </div>
+          </section>
+
+          <section style={{ backgroundColor: 'var(--surface-container)', border: '1px solid var(--surface-high)', borderRadius: '12px', padding: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <UserRound size={14} color="var(--primary)" />
+              <p style={{ fontFamily: 'Manrope', fontSize: '0.8rem', color: 'var(--on-surface)' }}>
+                Next Suggested Session: {suggestedDay}
+              </p>
+            </div>
+            {readiness ? (
+              <span style={{ fontFamily: 'Manrope', fontSize: '0.68rem', color: 'var(--outline)' }}>
+                Readiness {Math.round(readiness.sessionReadiness * 100)}%
+              </span>
+            ) : (
+              <button type="button" onClick={() => router.push('/readiness')} style={{ fontFamily: 'Manrope', fontSize: '0.68rem', color: 'var(--primary)' }}>
+                Check-in
+              </button>
+            )}
+          </section>
+        </main>
       </div>
-    )}
     </div>
-  </div>
-);
+  );
 }
