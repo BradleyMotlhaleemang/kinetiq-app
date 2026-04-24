@@ -1,11 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { workoutsApi } from '@/lib/api/workouts';
 import { exercisesApi } from '@/lib/api/exercises';
 import { useSessionStore } from '@/store/session.store';
-import { Check, Clock3, GripVertical, Plus, Search, Trash2, X } from 'lucide-react';
+import { Check, Clock3, GripVertical, Plus, Search, Trash2, X, RotateCcw } from 'lucide-react';
+
+// ─── Types ───────────────────────────────────────────────────────────────────
 
 type ExerciseItem = {
   id: string;
@@ -21,13 +23,405 @@ type SetRow = {
   completed: boolean;
 };
 
+// ─── Brand color palette (Kinetiq) ───────────────────────────────────────────
+
+const PRIMARY = '#b1c5ff';       // brand primary (cool blue)
+const PRIMARY_DIM = 'rgba(177,197,255,0.12)';
+const PRIMARY_GLOW = 'rgba(177,197,255,0.45)';
+const TERTIARY = '#59d8de';      // teal accent
+const SURFACE = '#111318';       // darkest bg
+const SURFACE_CONTAINER = '#1a1c22';
+const SURFACE_HIGH = '#282a30';
+const OUTLINE = '#8e909c';
+const ON_SURFACE = '#e2e2e8';
+const ERROR = '#ffb4ab';
+
+// muscle → accent color map (Kinetiq palette only — no random purples/oranges)
+const muscleColor = (muscle: string | null | undefined): string => {
+  if (!muscle) return OUTLINE;
+  if (muscle.includes('CHEST'))                      return '#ff6b6b'; // warm red
+  if (muscle.includes('BACK'))                       return PRIMARY;    // brand blue
+  if (muscle.includes('DELT') || muscle.includes('SHOULDER')) return TERTIARY; // teal
+  if (muscle.includes('QUAD'))                       return '#6cd68f'; // green
+  if (muscle.includes('GLUTE'))                      return '#ff7ac8'; // pink
+  if (muscle.includes('HAMSTRING'))                  return '#f5d76e'; // gold
+  if (muscle.includes('BICEP'))                      return '#b1c5ff'; // primary
+  if (muscle.includes('TRICEP'))                     return '#59d8de'; // tertiary
+  return TERTIARY;
+};
+
+// ─── Sub-component: Set Row ───────────────────────────────────────────────────
+
+function SetRowItem({
+  row,
+  rowIndex,
+  exerciseId,
+  accentColor,
+  onWeightChange,
+  onRepsChange,
+  onComplete,
+}: {
+  row: SetRow;
+  rowIndex: number;
+  exerciseId: string;
+  accentColor: string;
+  onWeightChange: (val: string) => void;
+  onRepsChange: (val: string) => void;
+  onComplete: () => void;
+}) {
+  const isCompleted = row.completed;
+
+  return (
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: '32px 1fr 1fr 44px',
+        gap: '8px',
+        alignItems: 'center',
+        padding: '2px 0',
+        opacity: isCompleted ? 0.7 : 1,
+        transition: 'opacity 0.2s',
+      }}
+    >
+      {/* Set label */}
+      <span
+        style={{
+          fontFamily: 'Manrope, sans-serif',
+          fontSize: '0.68rem',
+          fontWeight: 700,
+          color: isCompleted ? accentColor : OUTLINE,
+          letterSpacing: '0.06em',
+          transition: 'color 0.2s',
+        }}
+      >
+        S{rowIndex + 1}
+      </span>
+
+      {/* Weight input */}
+      <input
+        type="number"
+        placeholder="—"
+        value={row.weight}
+        disabled={isCompleted}
+        onChange={(e) => onWeightChange(e.target.value)}
+        style={{
+          backgroundColor: isCompleted ? `${accentColor}18` : SURFACE,
+          border: `1px solid ${isCompleted ? accentColor + '55' : SURFACE_HIGH}`,
+          borderRadius: '12px',
+          padding: '10px 0',
+          textAlign: 'center',
+          color: isCompleted ? accentColor : ON_SURFACE,
+          fontFamily: 'Manrope, sans-serif',
+          fontWeight: 700,
+          fontSize: '0.88rem',
+          outline: 'none',
+          width: '100%',
+          transition: 'all 0.2s',
+          appearance: 'textfield',
+        }}
+      />
+
+      {/* Reps input */}
+      <input
+        type="number"
+        placeholder="—"
+        value={row.reps}
+        disabled={isCompleted}
+        onChange={(e) => onRepsChange(e.target.value)}
+        style={{
+          backgroundColor: isCompleted ? `${accentColor}18` : SURFACE,
+          border: `1px solid ${isCompleted ? accentColor + '55' : SURFACE_HIGH}`,
+          borderRadius: '12px',
+          padding: '10px 0',
+          textAlign: 'center',
+          color: isCompleted ? accentColor : ON_SURFACE,
+          fontFamily: 'Manrope, sans-serif',
+          fontWeight: 700,
+          fontSize: '0.88rem',
+          outline: 'none',
+          width: '100%',
+          transition: 'all 0.2s',
+          appearance: 'textfield',
+        }}
+      />
+
+      {/* Check button */}
+      <button
+        type="button"
+        onClick={onComplete}
+        style={{
+          width: '44px',
+          height: '44px',
+          borderRadius: '13px',
+          border: isCompleted ? `1.5px solid ${accentColor}88` : `1.5px solid ${SURFACE_HIGH}`,
+          backgroundColor: isCompleted ? `${accentColor}22` : SURFACE,
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          transition: 'all 0.18s',
+          boxShadow: isCompleted ? `0 0 14px ${accentColor}44` : 'none',
+          flexShrink: 0,
+        }}
+      >
+        <Check
+          size={15}
+          color={isCompleted ? accentColor : OUTLINE}
+          strokeWidth={isCompleted ? 2.5 : 1.8}
+          style={{ transition: 'all 0.18s' }}
+        />
+      </button>
+    </div>
+  );
+}
+
+// ─── Sub-component: Exercise Card ─────────────────────────────────────────────
+
+function ExerciseCard({
+  exercise,
+  rows,
+  accentColor,
+  draggingId,
+  onDragStart,
+  onDragOver,
+  onDrop,
+  onDelete,
+  onSetWeightChange,
+  onSetRepsChange,
+  onSetComplete,
+  onAddSet,
+}: {
+  exercise: ExerciseItem;
+  rows: SetRow[];
+  accentColor: string;
+  draggingId: string | null;
+  onDragStart: () => void;
+  onDragOver: (e: React.DragEvent) => void;
+  onDrop: () => void;
+  onDelete: () => void;
+  onSetWeightChange: (rowIndex: number, val: string) => void;
+  onSetRepsChange: (rowIndex: number, val: string) => void;
+  onSetComplete: (rowIndex: number) => void;
+  onAddSet: () => void;
+}) {
+  const [note, setNote] = useState('');
+  const isDragging = draggingId === exercise.id;
+
+  return (
+    <div
+      draggable
+      onDragStart={onDragStart}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+      style={{
+        backgroundColor: SURFACE_CONTAINER,
+        border: `1px solid ${isDragging ? accentColor + '66' : SURFACE_HIGH}`,
+        borderRadius: '20px',
+        padding: '18px 16px 14px',
+        position: 'relative',
+        opacity: isDragging ? 0.5 : 1,
+        transition: 'opacity 0.15s, border-color 0.15s',
+        overflow: 'hidden',
+      }}
+    >
+      {/* Left accent line */}
+      <div
+        style={{
+          position: 'absolute',
+          left: 0,
+          top: '20px',
+          bottom: '20px',
+          width: '5px',
+          borderRadius: '0 5px 5px 0',
+          backgroundColor: accentColor,
+          opacity: 0.7,
+        }}
+      />
+
+      {/* Card header */}
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'flex-start',
+          marginBottom: '14px',
+          marginLeft: '10px',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+          <GripVertical size={14} color={OUTLINE} style={{ marginTop: '4px', cursor: 'grab', flexShrink: 0 }} />
+          <div>
+            <p
+              style={{
+                margin: 0,
+                fontFamily: 'Manrope, sans-serif',
+                fontSize: '0.62rem',
+                fontWeight: 700,
+                color: accentColor,
+                letterSpacing: '0.18em',
+                textTransform: 'uppercase',
+                marginBottom: '3px',
+              }}
+            >
+              {(exercise.primaryMuscle ?? 'General').replace(/_/g, ' ')}
+            </p>
+            <h2
+              style={{
+                margin: 0,
+                fontFamily: "'Space Grotesk', sans-serif",
+                fontSize: '1.12rem',
+                fontWeight: 800,
+                color: ON_SURFACE,
+                letterSpacing: '-0.01em',
+                lineHeight: 1.15,
+                textTransform: 'uppercase',
+              }}
+            >
+              {exercise.name}
+            </h2>
+            {exercise.equipment && (
+              <p
+                style={{
+                  margin: '5px 0 0',
+                  fontFamily: 'Manrope, sans-serif',
+                  fontSize: '0.68rem',
+                  color: OUTLINE,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                }}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M6 4v16M18 4v16M2 8h4M18 8h4M2 16h4M18 16h4" />
+                </svg>
+                {exercise.equipment}
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* Action buttons */}
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          <button
+            type="button"
+            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px', opacity: 0.6 }}
+            title="View history"
+          >
+            <RotateCcw size={14} color={OUTLINE} />
+          </button>
+          <button
+            type="button"
+            onClick={onDelete}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px', opacity: 0.7 }}
+            title="Remove exercise"
+          >
+            <Trash2 size={14} color={ERROR} />
+          </button>
+        </div>
+      </div>
+
+      {/* Column headers */}
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: '32px 1fr 1fr 44px',
+          gap: '8px',
+          marginBottom: '6px',
+          marginLeft: '10px',
+          padding: '0 2px',
+        }}
+      >
+        <span style={{ fontSize: '0.58rem', fontFamily: 'Manrope, sans-serif', fontWeight: 700, color: OUTLINE, letterSpacing: '0.12em' }}>SET</span>
+        <span style={{ fontSize: '0.58rem', fontFamily: 'Manrope, sans-serif', fontWeight: 700, color: OUTLINE, letterSpacing: '0.12em', textAlign: 'center' }}>KG</span>
+        <span style={{ fontSize: '0.58rem', fontFamily: 'Manrope, sans-serif', fontWeight: 700, color: OUTLINE, letterSpacing: '0.12em', textAlign: 'center' }}>REPS</span>
+        <span />
+      </div>
+
+      {/* Set rows */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginLeft: '10px', marginBottom: '12px' }}>
+        {rows.map((row, rowIndex) => (
+          <SetRowItem
+            key={row.id}
+            row={row}
+            rowIndex={rowIndex}
+            exerciseId={exercise.id}
+            accentColor={accentColor}
+            onWeightChange={(val) => onSetWeightChange(rowIndex, val)}
+            onRepsChange={(val) => onSetRepsChange(rowIndex, val)}
+            onComplete={() => onSetComplete(rowIndex)}
+          />
+        ))}
+      </div>
+
+      {/* Add set */}
+      <button
+        type="button"
+        onClick={onAddSet}
+        style={{
+          marginLeft: '10px',
+          background: 'none',
+          border: 'none',
+          cursor: 'pointer',
+          color: accentColor,
+          fontFamily: 'Manrope, sans-serif',
+          fontSize: '0.7rem',
+          fontWeight: 700,
+          letterSpacing: '0.08em',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '5px',
+          opacity: 0.8,
+          padding: '0',
+          marginBottom: '8px',
+        }}
+      >
+        <Plus size={13} />
+        ADD SET
+      </button>
+
+      {/* Notes divider + input */}
+      <div
+        style={{
+          borderTop: `1px solid ${SURFACE_HIGH}`,
+          marginLeft: '10px',
+          paddingTop: '10px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+        }}
+      >
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={OUTLINE} strokeWidth="2">
+          <line x1="3" y1="6" x2="21" y2="6" />
+          <line x1="3" y1="12" x2="15" y2="12" />
+          <line x1="3" y1="18" x2="18" y2="18" />
+        </svg>
+        <input
+          type="text"
+          placeholder="Add exercise notes..."
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          style={{
+            background: 'none',
+            border: 'none',
+            outline: 'none',
+            color: ON_SURFACE,
+            fontFamily: 'Manrope, sans-serif',
+            fontSize: '0.75rem',
+            width: '100%',
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
+// ─── Main Page ────────────────────────────────────────────────────────────────
+
 export default function WorkoutPage() {
   const router = useRouter();
   const params = useParams();
   const workoutId = params.id as string;
-
-  const { addSet, clearSession } =
-    useSessionStore();
+  const { addSet, clearSession } = useSessionStore();
 
   const [workout, setWorkout] = useState<any>(null);
   const [exercises, setExercises] = useState<ExerciseItem[]>([]);
@@ -39,13 +433,19 @@ export default function WorkoutPage() {
   const [loading, setLoading] = useState(true);
   const [completing, setCompleting] = useState(false);
   const [showExercisePicker, setShowExercisePicker] = useState(false);
-  const [categoryFilter, setCategoryFilter] = useState('ALL');
   const [exerciseQuery, setExerciseQuery] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('ALL');
   const [draggingExerciseId, setDraggingExerciseId] = useState<string | null>(null);
+
+  // Live timer
+  const [elapsedSec, setElapsedSec] = useState(0);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     loadWorkout();
     loadExercises();
+    timerRef.current = setInterval(() => setElapsedSec((s) => s + 1), 1000);
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, []);
 
   async function loadWorkout() {
@@ -88,29 +488,7 @@ export default function WorkoutPage() {
     }
   }
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-black flex items-center justify-center">
-        <p className="text-zinc-400 text-sm">Loading session...</p>
-      </div>
-    );
-  }
-
-  const currentDay = sessionDays[activeDayIndex] ?? sessionDays[0];
-  const currentWeek = workout?.currentWeek ?? 1;
-  const totalWeeks = workout?.totalWeeks ?? 4;
-  const dayLabel = currentDay?.label ?? workout?.splitDayLabel ?? 'Day 1';
-  const dayNumber = activeDayIndex + 1;
-  const dayExercises = currentDay?.exercises ?? [];
-  const muscleColor = (muscle: string | null | undefined) => {
-    if (!muscle) return '#8e909c';
-    if (muscle.includes('CHEST')) return '#ff6b6b';
-    if (muscle.includes('BACK')) return '#6aa9ff';
-    if (muscle.includes('DELT') || muscle.includes('SHOULDER')) return '#b084ff';
-    if (muscle.includes('QUAD')) return '#6cd68f';
-    if (muscle.includes('GLUTE')) return '#ff7ac8';
-    return '#59d8de';
-  };
+  // ── Helpers ──
 
   function ensureRows(exerciseId: string) {
     setSetRows((prev) => {
@@ -126,8 +504,22 @@ export default function WorkoutPage() {
     });
   }
 
-  async function completeSet(exerciseId: string, rowIndex: number) {
-    const row = setRows[exerciseId]?.[rowIndex];
+  function addRowForExercise(exerciseId: string) {
+    setSetRows((prev) => {
+      const current = prev[exerciseId] ?? [];
+      return {
+        ...prev,
+        [exerciseId]: [
+          ...current,
+          { id: `${exerciseId}-${current.length + 1}`, weight: '', reps: '', completed: false },
+        ],
+      };
+    });
+  }
+
+  async function handleSetComplete(exerciseId: string, rowIndex: number) {
+    const rows = setRows[exerciseId] ?? [];
+    const row = rows[rowIndex];
     if (!row || !row.weight || !row.reps || row.completed) return;
     try {
       const res = await workoutsApi.addSet(workoutId, {
@@ -139,231 +531,527 @@ export default function WorkoutPage() {
       addSet(exerciseId, res.data);
       setSetRows((prev) => ({
         ...prev,
-        [exerciseId]: prev[exerciseId].map((current, index) => (
+        [exerciseId]: rows.map((current, index) =>
           index === rowIndex ? { ...current, completed: true } : current
-        )),
+        ),
       }));
     } catch (err) {
       console.error(err);
     }
   }
 
+  function handleWeightChange(exerciseId: string, rowIndex: number, val: string) {
+    setSetRows((prev) => ({
+      ...prev,
+      [exerciseId]: (prev[exerciseId] ?? []).map((row, i) =>
+        i === rowIndex ? { ...row, weight: val } : row
+      ),
+    }));
+  }
+
+  function handleRepsChange(exerciseId: string, rowIndex: number, val: string) {
+    setSetRows((prev) => ({
+      ...prev,
+      [exerciseId]: (prev[exerciseId] ?? []).map((row, i) =>
+        i === rowIndex ? { ...row, reps: val } : row
+      ),
+    }));
+  }
+
+  function deleteExercise(exerciseId: string) {
+    setSessionDays((prev) =>
+      prev.map((day, index) =>
+        index === activeDayIndex
+          ? { ...day, exercises: day.exercises.filter((item) => item.id !== exerciseId) }
+          : day
+      )
+    );
+  }
+
+  function addExercise(exercise: ExerciseItem) {
+    setSessionDays((prev) =>
+      prev.map((day, index) =>
+        index === activeDayIndex ? { ...day, exercises: [...day.exercises, exercise] } : day
+      )
+    );
+    ensureRows(exercise.id);
+  }
+
+  // Timer display
+  const timerStr = (() => {
+    const m = Math.floor(elapsedSec / 60).toString().padStart(2, '0');
+    const s = (elapsedSec % 60).toString().padStart(2, '0');
+    return `${m}:${s}`;
+  })();
+
+  // Volume
+  const totalVolume = Object.values(setRows)
+    .flat()
+    .reduce((acc, row) => acc + (Number(row.weight) || 0) * (Number(row.reps) || 0), 0);
+
+  if (loading) {
+    return (
+      <div style={{ minHeight: '100dvh', backgroundColor: SURFACE, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <p style={{ color: OUTLINE, fontFamily: 'Manrope, sans-serif', fontSize: '0.85rem' }}>Loading session...</p>
+      </div>
+    );
+  }
+
+  const currentDay = sessionDays[activeDayIndex] ?? sessionDays[0];
+  const currentWeek = workout?.currentWeek ?? 1;
+  const dayLabel = currentDay?.label ?? workout?.splitDayLabel ?? 'Day 1';
+  const dayNumber = activeDayIndex + 1;
+  const dayExercises = currentDay?.exercises ?? [];
+
   return (
-    <div style={{ minHeight: '100dvh', backgroundColor: 'var(--surface)', padding: '20px 16px 120px' }}>
-      <div style={{ maxWidth: '520px', margin: '0 auto', display: 'flex', flexDirection: 'column', minHeight: '100dvh' }}>
-        <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-          <button type="button" onClick={() => router.push('/dashboard')} style={{ width: '36px', height: '36px', borderRadius: '9999px', backgroundColor: 'var(--surface-container)', border: '1px solid var(--surface-high)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <X size={16} color="var(--outline)" />
+    <div
+      style={{
+        minHeight: '100dvh',
+        backgroundColor: SURFACE,
+        color: ON_SURFACE,
+        fontFamily: 'Manrope, sans-serif',
+      }}
+    >
+      {/* Scrollable content area */}
+      <div
+        style={{
+          maxWidth: '520px',
+          margin: '0 auto',
+          padding: '24px 16px 160px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '0',
+        }}
+      >
+        {/* ── Header ── */}
+        <header
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginBottom: '24px',
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => router.push('/dashboard')}
+            style={{
+              width: '38px',
+              height: '38px',
+              borderRadius: '9999px',
+              backgroundColor: SURFACE_CONTAINER,
+              border: `1px solid ${SURFACE_HIGH}`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+            }}
+          >
+            <X size={16} color={OUTLINE} />
           </button>
+
           <div style={{ textAlign: 'center' }}>
-            <p className="label-sm" style={{ color: 'var(--primary)' }}>Week {currentWeek} • Day {dayNumber}</p>
-            <h1 style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: '1.55rem', fontWeight: 700, color: 'var(--on-surface)', margin: 0 }}>{dayLabel}</h1>
+            <p
+              style={{
+                margin: 0,
+                fontSize: '0.6rem',
+                fontWeight: 700,
+                color: PRIMARY,
+                letterSpacing: '0.22em',
+                textTransform: 'uppercase',
+              }}
+            >
+              Week {currentWeek} • Day {dayNumber}
+            </p>
+            <h1
+              style={{
+                margin: '2px 0 0',
+                fontFamily: "'Space Grotesk', sans-serif",
+                fontSize: '1.5rem',
+                fontWeight: 900,
+                color: ON_SURFACE,
+                letterSpacing: '-0.02em',
+                textTransform: 'uppercase',
+                fontStyle: 'italic',
+              }}
+            >
+              {dayLabel}
+            </h1>
           </div>
-          <button type="button" style={{ width: '36px', height: '36px', borderRadius: '9999px', backgroundColor: 'rgba(177,197,255,0.14)', border: '1px solid var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Clock3 size={15} color="var(--primary)" />
+
+          <button
+            type="button"
+            style={{
+              width: '38px',
+              height: '38px',
+              borderRadius: '9999px',
+              backgroundColor: PRIMARY_DIM,
+              border: `1px solid ${PRIMARY}55`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+            }}
+          >
+            <Clock3 size={15} color={PRIMARY} />
           </button>
         </header>
 
-        <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', marginBottom: '12px' }}>
+        {/* ── Day tabs ── */}
+        {sessionDays.length > 1 && (
+          <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', marginBottom: '16px' }}>
             {sessionDays.map((day, index) => (
               <button
                 key={day.label}
                 type="button"
                 onClick={() => setActiveDayIndex(index)}
                 style={{
-                  border: index === activeDayIndex ? '1px solid #59d8de' : '1px solid #282a2e',
-                  color: index === activeDayIndex ? '#59d8de' : '#8e909c',
+                  border: `1px solid ${index === activeDayIndex ? TERTIARY : SURFACE_HIGH}`,
+                  color: index === activeDayIndex ? TERTIARY : OUTLINE,
                   borderRadius: '9999px',
-                  padding: '4px 10px',
-                  backgroundColor: '#111318',
-                  fontFamily: 'Manrope',
-                  fontSize: '0.72rem',
+                  padding: '5px 12px',
+                  backgroundColor: index === activeDayIndex ? `${TERTIARY}15` : SURFACE_CONTAINER,
+                  fontFamily: 'Manrope, sans-serif',
+                  fontWeight: 700,
+                  fontSize: '0.7rem',
+                  letterSpacing: '0.06em',
                   whiteSpace: 'nowrap',
                   cursor: 'pointer',
+                  transition: 'all 0.15s',
                 }}
               >
                 {day.label}
               </button>
             ))}
           </div>
-
-        <button
-          onClick={() => setShowExercisePicker((v) => !v)}
-          style={{ width: '100%', backgroundColor: 'var(--surface-container)', border: '1px dashed var(--outline-variant)', borderRadius: '14px', padding: '14px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', color: 'var(--outline)', fontFamily: 'Manrope', fontWeight: 700, cursor: 'pointer', marginBottom: '12px' }}
-        >
-          <Plus size={14} /> Add exercise
-        </button>
-
-        {showExercisePicker && (
-          <div style={{ backgroundColor: 'var(--surface-container)', border: '1px solid var(--surface-high)', borderRadius: '10px', padding: '10px', marginBottom: '12px' }}>
-            <div style={{ position: 'relative', marginBottom: '8px' }}>
-              <Search size={14} color="#8e909c" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)' }} />
-              <input className="k-input" style={{ paddingLeft: '30px' }} value={exerciseQuery} onChange={(e) => setExerciseQuery(e.target.value)} placeholder="Search exercises" />
-            </div>
-            <select className="k-input" value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} style={{ marginBottom: '8px' }}>
-              <option value="ALL">All muscle groups</option>
-              {[...new Set(exercises.map((item) => item.primaryMuscle).filter(Boolean))].map((muscle) => (
-                <option key={muscle} value={muscle ?? ''}>{muscle}</option>
-              ))}
-            </select>
-            <div style={{ maxHeight: '220px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              {exercises
-                .filter((item) => (categoryFilter === 'ALL' || item.primaryMuscle === categoryFilter)
-                  && item.name.toLowerCase().includes(exerciseQuery.toLowerCase()))
-                .slice(0, 40)
-                .map((exercise) => (
-                  <button
-                    key={exercise.id}
-                    type="button"
-                    onClick={() => {
-                      setSessionDays((prev) => prev.map((day, index) => (
-                        index === activeDayIndex ? { ...day, exercises: [...day.exercises, exercise] } : day
-                      )));
-                      ensureRows(exercise.id);
-                    }}
-                    style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--surface-high)', borderRadius: '8px', padding: '8px', textAlign: 'left', cursor: 'pointer' }}
-                  >
-                    <p style={{ margin: 0, color: '#e2e2e8', fontFamily: 'Manrope', fontSize: '0.82rem' }}>{exercise.name}</p>
-                    <p style={{ margin: 0, color: '#8e909c', fontFamily: 'Manrope', fontSize: '0.68rem' }}>{exercise.primaryMuscle ?? 'General'}</p>
-                  </button>
-                ))}
-            </div>
-          </div>
         )}
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', flex: 1 }}>
+        {/* ── Exercise cards ── */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
           {dayExercises.map((exercise) => {
-            const rows = setRows[exercise.id] ?? [
-              { id: `${exercise.id}-1`, weight: '', reps: '', completed: false },
-              { id: `${exercise.id}-2`, weight: '', reps: '', completed: false },
-              { id: `${exercise.id}-3`, weight: '', reps: '', completed: false },
-            ];
-            const tagColor = muscleColor(exercise.primaryMuscle);
+            const rows = setRows[exercise.id] ?? (() => {
+              const defaultRows = [
+                { id: `${exercise.id}-1`, weight: '', reps: '', completed: false },
+                { id: `${exercise.id}-2`, weight: '', reps: '', completed: false },
+                { id: `${exercise.id}-3`, weight: '', reps: '', completed: false },
+              ];
+              // ensure rows are initialized
+              setTimeout(() => ensureRows(exercise.id), 0);
+              return defaultRows;
+            })();
+            const accent = muscleColor(exercise.primaryMuscle);
+
             return (
-              <div
+              <ExerciseCard
                 key={exercise.id}
-                draggable
+                exercise={exercise}
+                rows={rows}
+                accentColor={accent}
+                draggingId={draggingExerciseId}
                 onDragStart={() => setDraggingExerciseId(exercise.id)}
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={() => {
                   if (!draggingExerciseId || draggingExerciseId === exercise.id) return;
-                  setSessionDays((prev) => prev.map((day, index) => {
-                    if (index !== activeDayIndex) return day;
-                    const copy = [...day.exercises];
-                    const from = copy.findIndex((item) => item.id === draggingExerciseId);
-                    const to = copy.findIndex((item) => item.id === exercise.id);
-                    if (from < 0 || to < 0) return day;
-                    const [moved] = copy.splice(from, 1);
-                    copy.splice(to, 0, moved);
-                    return { ...day, exercises: copy };
-                  }));
+                  setSessionDays((prev) =>
+                    prev.map((day, index) => {
+                      if (index !== activeDayIndex) return day;
+                      const copy = [...day.exercises];
+                      const from = copy.findIndex((item) => item.id === draggingExerciseId);
+                      const to = copy.findIndex((item) => item.id === exercise.id);
+                      if (from < 0 || to < 0) return day;
+                      const [moved] = copy.splice(from, 1);
+                      copy.splice(to, 0, moved);
+                      return { ...day, exercises: copy };
+                    })
+                  );
                   setDraggingExerciseId(null);
                 }}
-                style={{ backgroundColor: 'var(--surface-container)', border: '1px solid var(--surface-high)', borderRadius: '16px', padding: '12px', position: 'relative' }}
-              >
-                <div style={{ position: 'absolute', left: 0, top: '14px', bottom: '14px', width: '6px', borderRadius: '0 6px 6px 0', backgroundColor: tagColor, opacity: 0.55 }} />
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: '8px' }}>
-                    <GripVertical size={14} color="#444650" />
-                    <div>
-                      <p style={{ margin: 0, fontFamily: "'Space Grotesk', sans-serif", color: '#e2e2e8', fontSize: '0.92rem' }}>{exercise.name}</p>
-                      <p style={{ margin: 0, fontFamily: 'Manrope', color: 'var(--outline)', fontSize: '0.68rem' }}>{exercise.equipment ?? 'Equipment optional'}</p>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSessionDays((prev) => prev.map((day, index) => (
-                        index === activeDayIndex ? { ...day, exercises: day.exercises.filter((item) => item.id !== exercise.id) } : day
-                      )));
-                    }}
-                    style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}
-                  >
-                    <Trash2 size={14} color="#ffb4ab" />
-                  </button>
-                </div>
-
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', marginLeft: '8px' }}>
-                  <span style={{ border: `1px solid ${tagColor}`, color: tagColor, borderRadius: '9999px', padding: '2px 8px', fontFamily: 'Manrope', fontSize: '0.66rem', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
-                    {(exercise.primaryMuscle ?? 'GENERAL').replace('_', ' ')}
-                  </span>
-                  <div style={{ display: 'flex', gap: '4px' }}>
-                    <span style={{ width: '26px', height: '3px', borderRadius: '9999px', backgroundColor: tagColor, opacity: 1 }} />
-                    <span style={{ width: '26px', height: '3px', borderRadius: '9999px', backgroundColor: tagColor, opacity: 0.6 }} />
-                    <span style={{ width: '26px', height: '3px', borderRadius: '9999px', backgroundColor: tagColor, opacity: 0.3 }} />
-                  </div>
-                </div>
-
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginLeft: '8px' }}>
-                  {rows.map((row, rowIndex) => (
-                    <div key={row.id} style={{ display: 'grid', gridTemplateColumns: '44px 1fr 1fr 44px', gap: '6px', alignItems: 'center' }}>
-                      <span style={{ fontFamily: 'Manrope', fontSize: '0.7rem', color: '#8e909c' }}>S{rowIndex + 1}</span>
-                      <input
-                        type="number"
-                        placeholder="kg"
-                        value={row.weight}
-                        onChange={(e) => setSetRows((prev) => ({
-                          ...prev,
-                          [exercise.id]: rows.map((current, index) => (index === rowIndex ? { ...current, weight: e.target.value } : current)),
-                        }))}
-                        className="k-input"
-                      />
-                      <input
-                        type="number"
-                        placeholder="reps"
-                        value={row.reps}
-                        onChange={(e) => setSetRows((prev) => ({
-                          ...prev,
-                          [exercise.id]: rows.map((current, index) => (index === rowIndex ? { ...current, reps: e.target.value } : current)),
-                        }))}
-                        className="k-input"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => completeSet(exercise.id, rowIndex)}
-                        style={{ width: '36px', height: '36px', borderRadius: '10px', border: row.completed ? '1px solid var(--tertiary)' : '1px solid var(--surface-high)', backgroundColor: row.completed ? 'rgba(89,216,222,0.18)' : 'var(--surface)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                      >
-                        <Check size={14} color={row.completed ? 'var(--tertiary)' : 'var(--outline)'} />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
+                onDelete={() => deleteExercise(exercise.id)}
+                onSetWeightChange={(rowIndex, val) => handleWeightChange(exercise.id, rowIndex, val)}
+                onSetRepsChange={(rowIndex, val) => handleRepsChange(exercise.id, rowIndex, val)}
+                onSetComplete={(rowIndex) => handleSetComplete(exercise.id, rowIndex)}
+                onAddSet={() => addRowForExercise(exercise.id)}
+              />
             );
           })}
         </div>
 
+        {/* ── Add exercise button ── */}
+        <button
+          type="button"
+          onClick={() => setShowExercisePicker((v) => !v)}
+          style={{
+            marginTop: '14px',
+            width: '100%',
+            backgroundColor: 'transparent',
+            border: `2px dashed ${SURFACE_HIGH}`,
+            borderRadius: '18px',
+            padding: '16px',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            gap: '8px',
+            color: OUTLINE,
+            fontFamily: 'Manrope, sans-serif',
+            fontWeight: 700,
+            fontSize: '0.72rem',
+            letterSpacing: '0.15em',
+            textTransform: 'uppercase',
+            cursor: 'pointer',
+            transition: 'all 0.15s',
+          }}
+          onMouseEnter={(e) => {
+            (e.currentTarget as HTMLButtonElement).style.borderColor = PRIMARY + '88';
+            (e.currentTarget as HTMLButtonElement).style.color = PRIMARY;
+          }}
+          onMouseLeave={(e) => {
+            (e.currentTarget as HTMLButtonElement).style.borderColor = SURFACE_HIGH;
+            (e.currentTarget as HTMLButtonElement).style.color = OUTLINE;
+          }}
+        >
+          <Plus size={16} />
+          Add Exercise
+        </button>
+
+        {/* ── Exercise picker ── */}
         {showExercisePicker && (
-          <button
-            type="button"
-            onClick={() => setShowExercisePicker(false)}
-            style={{ position: 'fixed', right: 20, bottom: 92, width: 40, height: 40, borderRadius: '9999px', border: '1px solid #282a2e', backgroundColor: '#1a1c20', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          <div
+            style={{
+              marginTop: '10px',
+              backgroundColor: SURFACE_CONTAINER,
+              border: `1px solid ${SURFACE_HIGH}`,
+              borderRadius: '16px',
+              padding: '14px',
+            }}
           >
-            <X size={14} color="#8e909c" />
-          </button>
+            {/* Search */}
+            <div style={{ position: 'relative', marginBottom: '10px' }}>
+              <Search
+                size={14}
+                color={OUTLINE}
+                style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }}
+              />
+              <input
+                value={exerciseQuery}
+                onChange={(e) => setExerciseQuery(e.target.value)}
+                placeholder="Search exercises..."
+                style={{
+                  width: '100%',
+                  backgroundColor: SURFACE,
+                  border: `1px solid ${SURFACE_HIGH}`,
+                  borderRadius: '10px',
+                  padding: '10px 12px 10px 34px',
+                  color: ON_SURFACE,
+                  fontFamily: 'Manrope, sans-serif',
+                  fontSize: '0.8rem',
+                  outline: 'none',
+                  boxSizing: 'border-box',
+                }}
+              />
+            </div>
+
+            {/* Muscle filter */}
+            <select
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+              style={{
+                width: '100%',
+                backgroundColor: SURFACE,
+                border: `1px solid ${SURFACE_HIGH}`,
+                borderRadius: '10px',
+                padding: '8px 12px',
+                color: ON_SURFACE,
+                fontFamily: 'Manrope, sans-serif',
+                fontSize: '0.78rem',
+                outline: 'none',
+                marginBottom: '10px',
+                cursor: 'pointer',
+              }}
+            >
+              <option value="ALL">All muscle groups</option>
+              {[...new Set(exercises.map((item) => item.primaryMuscle).filter(Boolean))].map(
+                (muscle) => (
+                  <option key={muscle} value={muscle ?? ''}>
+                    {muscle}
+                  </option>
+                )
+              )}
+            </select>
+
+            {/* Exercise list */}
+            <div
+              style={{
+                maxHeight: '220px',
+                overflowY: 'auto',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '6px',
+              }}
+            >
+              {exercises
+                .filter(
+                  (item) =>
+                    (categoryFilter === 'ALL' || item.primaryMuscle === categoryFilter) &&
+                    item.name.toLowerCase().includes(exerciseQuery.toLowerCase())
+                )
+                .slice(0, 40)
+                .map((exercise) => {
+                  const accent = muscleColor(exercise.primaryMuscle);
+                  return (
+                    <button
+                      key={exercise.id}
+                      type="button"
+                      onClick={() => {
+                        addExercise(exercise);
+                        setShowExercisePicker(false);
+                        setExerciseQuery('');
+                      }}
+                      style={{
+                        backgroundColor: SURFACE,
+                        border: `1px solid ${SURFACE_HIGH}`,
+                        borderRadius: '10px',
+                        padding: '10px 12px',
+                        textAlign: 'left',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '10px',
+                        transition: 'border-color 0.12s',
+                      }}
+                      onMouseEnter={(e) => {
+                        (e.currentTarget as HTMLButtonElement).style.borderColor = accent + '66';
+                      }}
+                      onMouseLeave={(e) => {
+                        (e.currentTarget as HTMLButtonElement).style.borderColor = SURFACE_HIGH;
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: '4px',
+                          height: '28px',
+                          borderRadius: '4px',
+                          backgroundColor: accent,
+                          flexShrink: 0,
+                        }}
+                      />
+                      <div>
+                        <p style={{ margin: 0, color: ON_SURFACE, fontFamily: 'Manrope, sans-serif', fontSize: '0.82rem', fontWeight: 600 }}>
+                          {exercise.name}
+                        </p>
+                        <p style={{ margin: 0, color: OUTLINE, fontFamily: 'Manrope, sans-serif', fontSize: '0.68rem' }}>
+                          {exercise.primaryMuscle ?? 'General'}
+                        </p>
+                      </div>
+                    </button>
+                  );
+                })}
+            </div>
+          </div>
         )}
 
-        <div style={{ marginTop: '18px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px', padding: '0 4px' }}>
+        {/* ── Footer stats ── */}
+        <div style={{ marginTop: '28px', padding: '0 4px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
             <div>
-              <p className="label-sm" style={{ color: 'var(--outline)' }}>Workout Volume</p>
-              <p style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: '1.35rem', color: 'var(--on-surface)', fontWeight: 700 }}>
-                {(Object.values(setRows).flat().reduce((acc, row) => acc + ((Number(row.weight) || 0) * (Number(row.reps) || 0)), 0)).toLocaleString()} <span style={{ color: 'var(--outline)', fontSize: '0.8rem' }}>kg</span>
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: '0.58rem',
+                  fontWeight: 700,
+                  color: OUTLINE,
+                  letterSpacing: '0.16em',
+                  textTransform: 'uppercase',
+                  marginBottom: '3px',
+                }}
+              >
+                Workout Volume
+              </p>
+              <p
+                style={{
+                  margin: 0,
+                  fontFamily: "'Space Grotesk', sans-serif",
+                  fontSize: '1.6rem',
+                  fontWeight: 900,
+                  color: ON_SURFACE,
+                  lineHeight: 1,
+                }}
+              >
+                {totalVolume.toLocaleString()}{' '}
+                <span style={{ fontSize: '0.85rem', fontWeight: 600, color: OUTLINE }}>KG</span>
               </p>
             </div>
             <div style={{ textAlign: 'right' }}>
-              <p className="label-sm" style={{ color: 'var(--outline)' }}>Duration</p>
-              <p style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: '1.35rem', color: 'var(--primary)', fontWeight: 700 }}>42:15</p>
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: '0.58rem',
+                  fontWeight: 700,
+                  color: OUTLINE,
+                  letterSpacing: '0.16em',
+                  textTransform: 'uppercase',
+                  marginBottom: '3px',
+                }}
+              >
+                Duration
+              </p>
+              <p
+                style={{
+                  margin: 0,
+                  fontFamily: "'Space Grotesk', sans-serif",
+                  fontSize: '1.6rem',
+                  fontWeight: 900,
+                  color: PRIMARY,
+                  lineHeight: 1,
+                }}
+              >
+                {timerStr}
+              </p>
             </div>
           </div>
         </div>
+      </div>
 
+      {/* ── Sticky Finish button ── */}
+      <div
+        style={{
+          position: 'fixed',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          padding: '16px',
+          paddingBottom: 'calc(16px + env(safe-area-inset-bottom))',
+          background: `linear-gradient(to top, ${SURFACE} 70%, transparent)`,
+          display: 'flex',
+          justifyContent: 'center',
+        }}
+      >
         <button
+          type="button"
           onClick={completeSession}
           disabled={completing}
-          style={{ position: 'fixed', left: '50%', transform: 'translateX(-50%)', bottom: 22, width: 'min(520px, calc(100% - 32px))', padding: '16px', borderRadius: '16px', border: 'none', background: completing ? 'var(--outline-variant)' : 'var(--primary)', color: completing ? 'var(--outline)' : 'var(--on-primary)', fontFamily: 'Manrope', fontWeight: 800, letterSpacing: '0.12em', textTransform: 'uppercase', cursor: completing ? 'not-allowed' : 'pointer' }}
+          style={{
+            width: '100%',
+            maxWidth: '520px',
+            padding: '18px',
+            borderRadius: '18px',
+            border: 'none',
+            background: completing
+              ? SURFACE_HIGH
+              : `linear-gradient(135deg, ${PRIMARY} 0%, ${TERTIARY} 100%)`,
+            color: completing ? OUTLINE : SURFACE,
+            fontFamily: 'Manrope, sans-serif',
+            fontWeight: 900,
+            fontSize: '0.82rem',
+            letterSpacing: '0.18em',
+            textTransform: 'uppercase',
+            cursor: completing ? 'not-allowed' : 'pointer',
+            boxShadow: completing
+              ? 'none'
+              : `0 10px 40px -10px ${PRIMARY_GLOW}`,
+            transition: 'all 0.2s',
+          }}
         >
-          {completing ? 'Submitting...' : 'End Workout / Submit'}
+          {completing ? 'Submitting…' : 'Finish Workout'}
         </button>
       </div>
     </div>

@@ -59,7 +59,8 @@ export default function NewMesocyclePage() {
       const res = await mesocyclesApi.recommend();
       setRecommendations(res.data as MesocycleRecommendation);
     } catch (err) {
-      console.error('Failed to load recommendations:', err);
+      const errorMsg = err instanceof Error ? err.message : JSON.stringify(err);
+      console.error('Failed to load recommendations:', errorMsg);
     }
   }
   async function loadExercises() {
@@ -222,30 +223,28 @@ export default function NewMesocyclePage() {
                 return (
                   <div key={template.id} style={{ position: 'relative', backgroundColor: '#1a1c20', border: selected ? '1px solid #59d8de' : '1px solid #282a2e', borderRadius: '8px', overflow: 'hidden' }}>
                     <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '4px', backgroundColor: focusColor }} />
-                    <button type="button" onClick={() => { setSelectedTemplate(template); setFormData((prev) => ({ ...prev, templateId: template.id, totalWeeks: template.durationWeeks })); }} style={{ width: '100%', textAlign: 'left', background: 'transparent', border: 'none', padding: '12px 12px 12px 16px', cursor: 'pointer' }}>
-                      <div style={{ display: 'flex', alignItems: 'start', justifyContent: 'space-between', gap: '8px' }}>
-                        <div>
-                          <p style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: '0.95rem', color: '#e2e2e8', fontWeight: 600 }}>{template.programName}</p>
-                          <p style={{ fontFamily: 'Manrope', fontSize: '0.75rem', color: '#8e909c' }}>
-                            {SPLIT_LABELS[template.splitType]} • {template.weeklyStructure.length} days/week • {template.durationWeeks} weeks
-                          </p>
-                          <p style={{ fontFamily: 'Manrope', fontSize: '0.7rem', color: '#444650', marginTop: '6px' }}>
-                            {template.tags.join(' · ')}
-                          </p>
-                        </div>
-                        <button type="button" onClick={(event) => { event.stopPropagation(); setInfoTemplate(template); }} style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}>
-                          <Info size={16} color="#8e909c" />
-                        </button>
-                      </div>
-                      {template.highIntensity && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '8px' }}>
-                          <AlertTriangle size={12} color="#ffb4ab" />
-                          <span style={{ fontFamily: 'Manrope', fontSize: '0.68rem', color: '#ffb4ab' }}>
-                            Not recommended for beginners · High recovery demand
-                          </span>
-                        </div>
-                      )}
-                    </button>
+                    <div style={{ display: 'flex', alignItems: 'start', justifyContent: 'space-between', gap: '8px', padding: '12px 12px 12px 16px' }}>
+                      <button type="button" onClick={() => { setSelectedTemplate(template); setFormData((prev) => ({ ...prev, templateId: template.id, totalWeeks: template.durationWeeks })); }} style={{ flex: 1, background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left', padding: 0 }}>
+                        <p style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: '0.95rem', color: '#e2e2e8', fontWeight: 600 }}>{template.programName}</p>
+                        <p style={{ fontFamily: 'Manrope', fontSize: '0.75rem', color: '#8e909c' }}>
+                          {SPLIT_LABELS[template.splitType]} • {template.weeklyStructure.length} days/week • {template.durationWeeks} weeks
+                        </p>
+                        <p style={{ fontFamily: 'Manrope', fontSize: '0.7rem', color: '#444650', marginTop: '6px' }}>
+                          {template.tags.join(' · ')}
+                        </p>
+                        {template.highIntensity && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '8px' }}>
+                            <AlertTriangle size={12} color="#ffb4ab" />
+                            <span style={{ fontFamily: 'Manrope', fontSize: '0.68rem', color: '#ffb4ab' }}>
+                              Not recommended for beginners · High recovery demand
+                            </span>
+                          </div>
+                        )}
+                      </button>
+                      <button type="button" onClick={() => { setInfoTemplate(template); }} style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: '4px', flexShrink: 0 }}>
+                        <Info size={16} color="#8e909c" />
+                      </button>
+                    </div>
                   </div>
                 );
               })}
