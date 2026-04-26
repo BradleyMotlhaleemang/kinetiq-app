@@ -1,35 +1,39 @@
-export default function KinetiqLogo({ size = 'md' }: { size?: 'sm' | 'md' | 'lg' }) {
-  const scale = size === 'sm' ? 0.7 : size === 'lg' ? 1.4 : 1;
-  const fontSize = 22 * scale;
-
+export default function KinetiqLogo({
+  size = 'md',
+}: {
+  size?: 'sm' | 'md' | 'lg';
+  clickable?: boolean;
+}) {
+  const fontSize = size === 'sm' ? 18 : size === 'lg' ? 24 : 20;
   return (
-    <span
-      style={{
-        fontFamily: "'Space Grotesk', sans-serif",
-        fontSize: `${fontSize}px`,
-        fontWeight: 700,
-        letterSpacing: '-0.04em',
-        color: '#b1c5ff',
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: '0px',
-      }}
-    >
-      <span style={{ fontStyle: 'italic' }}>KINETI</span>
-      <span style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
-        <span style={{ fontStyle: 'italic' }}>Q</span>
-        {/* Motion line — the signature dynamic detail */}
-        <svg
-          width={`${12 * scale}`}
-          height={`${8 * scale}`}
-          viewBox="0 0 12 8"
-          style={{ marginLeft: `${2 * scale}px`, marginBottom: `${2 * scale}px` }}
-        >
-          <line x1="0" y1="4" x2="10" y2="4" stroke="#59d8de" strokeWidth="1.5" strokeLinecap="round" />
-          <line x1="7" y1="1" x2="10" y2="4" stroke="#59d8de" strokeWidth="1.5" strokeLinecap="round" />
-          <line x1="7" y1="7" x2="10" y2="4" stroke="#59d8de" strokeWidth="1.5" strokeLinecap="round" />
-        </svg>
+    <span style={{
+      fontFamily: 'Space Grotesk, sans-serif',
+      fontWeight: 900,
+      fontSize,
+      letterSpacing: '-0.04em',
+    }}>
+      <span style={{
+        background: 'linear-gradient(90deg, #b1c5ff, #d4bbff)',
+        WebkitBackgroundClip: 'text',
+        WebkitTextFillColor: 'transparent',
+      }}>
+        Kinetiq
       </span>
+    </span>
+  );
+}
+
+// NOTE: The "Q" teal treatment is done by splitting the word:
+// "Kinetiq" → "Kinetiق" is NOT split in current templates page.
+// To add teal Q: render "Kineti" with the gradient, then "q" in color #59d8de.
+// Implementation:
+function KinetiqLogoWithTealQ() {
+  return (
+    <span style={{ fontFamily: 'Space Grotesk, sans-serif', fontWeight: 900, fontSize: 20, letterSpacing: '-0.04em' }}>
+      <span style={{ background: 'linear-gradient(90deg, #b1c5ff, #d4bbff)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+        Kineti
+      </span>
+      <span style={{ color: '#59d8de' }}>q</span>
     </span>
   );
 }

@@ -7,6 +7,20 @@ import { mesocyclesApi } from '@/lib/api/mesocycles';
 import { Plus, ChevronRight, CheckCircle, Clock, Zap } from 'lucide-react';
 import { MUSCLE_FOCUS_COLOR, TEMPLATE_CATALOG, SPLIT_LABELS } from '@/lib/templates/catalog';
 
+const C = {
+  surface: '#111318',
+  surfaceLow: '#161820',
+  surfaceContainer: '#1e2026',
+  surfaceHigh: '#282a30',
+  outline: '#8e909c',
+  outlineVariant: '#3a3c44',
+  onSurface: '#e2e2e8',
+  onSurfaceVariant: '#c5c6d2',
+  primary: '#b1c5ff',
+  secondary: '#d4bbff',
+  tertiary: '#59d8de',
+};
+
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: any }> = {
   ACTIVE: { label: 'Active', color: '#59d8de', icon: Zap },
   COMPLETED: { label: 'Completed', color: '#444650', icon: CheckCircle },
@@ -59,7 +73,7 @@ export default function MesocyclesPage() {
   const past = mesocyclesArray.filter((m) => m.status === 'COMPLETED');
 
   return (
-    <div style={{ minHeight: '100dvh', backgroundColor: '#111318', paddingBottom: '96px' }}>
+    <div style={{ minHeight: '100dvh', backgroundColor: C.surface, paddingBottom: '96px' }}>
       <AppHeader title="Mesocycles" />
 
       <div style={{ maxWidth: '480px', margin: '0 auto', padding: '0 20px' }}>
@@ -67,6 +81,7 @@ export default function MesocyclesPage() {
         {/* Create CTA */}
         <button
           onClick={() => router.push('/mesocycles/new')}
+          className="btn-primary"
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -74,31 +89,25 @@ export default function MesocyclesPage() {
             gap: '8px',
             width: '100%',
             padding: '16px',
-            background: 'linear-gradient(45deg, #b1c5ff, #002560)',
-            border: 'none',
-            borderTopRightRadius: '0.75rem',
-            borderBottomLeftRadius: '0px',
-            borderTopLeftRadius: '0.125rem',
-            borderBottomRightRadius: '0.125rem',
-            cursor: 'pointer',
+            borderRadius: '12px',
             marginBottom: '32px',
           }}
         >
-          <Plus size={16} color="#002c70" />
+          <Plus size={16} color="#05080f" />
           <span style={{
             fontFamily: 'Manrope, sans-serif',
             fontSize: '0.75rem',
             fontWeight: 700,
             letterSpacing: '0.1em',
             textTransform: 'uppercase',
-            color: '#002c70',
+            color: '#05080f',
           }}>
             Create new block
           </span>
         </button>
 
         {loading ? (
-          <p style={{ fontFamily: 'Manrope', fontSize: '0.875rem', color: '#444650' }}>
+          <p style={{ fontFamily: 'Manrope', fontSize: '0.875rem', color: C.outline }}>
             Loading...
           </p>
         ) : mesocycles.length === 0 ? (
@@ -107,7 +116,7 @@ export default function MesocyclesPage() {
           <>
             {active.length > 0 && (
               <section style={{ marginBottom: '32px' }}>
-                <p className="label-sm" style={{ color: '#444650', marginBottom: '12px' }}>
+                <p className="label-sm" style={{ color: C.outline, marginBottom: '12px' }}>
                   Current
                 </p>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -124,7 +133,7 @@ export default function MesocyclesPage() {
 
             {past.length > 0 && (
               <section>
-                <p className="label-sm" style={{ color: '#444650', marginBottom: '12px' }}>
+                <p className="label-sm" style={{ color: C.outline, marginBottom: '12px' }}>
                   Past blocks
                 </p>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -140,17 +149,17 @@ export default function MesocyclesPage() {
             )}
 
             <section style={{ marginTop: '32px' }}>
-              <p className="label-sm" style={{ color: '#444650', marginBottom: '12px' }}>
+              <p className="label-sm" style={{ color: C.outline, marginBottom: '12px' }}>
                 Templates
               </p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 {TEMPLATE_CATALOG.map((template) => (
-                  <div key={template.id} style={{ position: 'relative', backgroundColor: '#1a1c20', border: '1px solid #282a2e', borderRadius: '8px', padding: '12px 12px 12px 16px' }}>
-                    <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '4px', borderRadius: '8px 0 0 8px', backgroundColor: MUSCLE_FOCUS_COLOR[template.muscleFocus] }} />
-                    <p style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: '0.92rem', fontWeight: 600, color: '#e2e2e8' }}>
+                  <div key={template.id} style={{ position: 'relative', backgroundColor: C.surfaceContainer, border: `1px solid ${C.outlineVariant}`, borderRadius: '12px', padding: '12px 12px 12px 16px' }}>
+                    <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '5px', borderRadius: '12px 0 0 12px', backgroundColor: MUSCLE_FOCUS_COLOR[template.muscleFocus] ?? C.tertiary, boxShadow: `0 0 10px ${MUSCLE_FOCUS_COLOR[template.muscleFocus] ?? C.tertiary}` }} />
+                    <p style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: '0.92rem', fontWeight: 600, color: C.onSurface }}>
                       {template.programName}
                     </p>
-                    <p style={{ fontFamily: 'Manrope', fontSize: '0.72rem', color: '#8e909c', marginTop: '2px' }}>
+                    <p style={{ fontFamily: 'Manrope', fontSize: '0.72rem', color: C.onSurfaceVariant, marginTop: '2px' }}>
                       {SPLIT_LABELS[template.splitType]} • {template.weeklyStructure.length} days/week • {template.durationWeeks} weeks
                     </p>
                   </div>
@@ -167,6 +176,12 @@ export default function MesocyclesPage() {
 function MesocycleCard({ mesocycle, onClick }: { mesocycle: any; onClick: () => void }) {
   const status = STATUS_CONFIG[mesocycle.status] ?? STATUS_CONFIG.ACTIVE;
   const StatusIcon = status.icon;
+  const sideStripColor =
+    mesocycle.status === 'ACTIVE'
+      ? C.tertiary
+      : mesocycle.status === 'COMPLETED'
+        ? C.secondary
+        : C.primary;
 
   const progressPct = mesocycle.totalWeeks > 0
     ? Math.round((mesocycle.currentWeek / mesocycle.totalWeeks) * 100)
@@ -183,17 +198,15 @@ function MesocycleCard({ mesocycle, onClick }: { mesocycle: any; onClick: () => 
         display: 'flex',
         flexDirection: 'column',
         gap: '12px',
-        padding: '16px 20px',
-        backgroundColor: '#1a1c20',
-        borderTopRightRadius: '0.75rem',
-        borderBottomLeftRadius: '0px',
-        borderTopLeftRadius: '0.125rem',
-        borderBottomRightRadius: '0.125rem',
-        border: 'none',
+        padding: '16px 16px 16px 18px',
+        backgroundColor: C.surfaceContainer,
+        borderRadius: '14px',
+        border: `1px solid ${C.outlineVariant}`,
         cursor: 'pointer',
         width: '100%',
         textAlign: 'left',
-        borderLeft: mesocycle.status === 'ACTIVE' ? '2px solid #59d8de' : '2px solid transparent',
+        borderLeft: `5px solid ${sideStripColor}`,
+        boxShadow: `0 0 18px -12px ${sideStripColor}`,
       }}
     >
       {/* Top row */}
@@ -202,18 +215,18 @@ function MesocycleCard({ mesocycle, onClick }: { mesocycle: any; onClick: () => 
           <p style={{
             fontFamily: "'Space Grotesk', sans-serif",
             fontSize: '1rem', fontWeight: 600,
-            letterSpacing: '-0.02em', color: '#e2e2e8',
+            letterSpacing: '-0.02em', color: C.onSurface,
             margin: '0 0 4px',
           }}>
             {mesocycle.name}
           </p>
           <p style={{
-            fontFamily: 'Manrope', fontSize: '0.75rem', color: '#444650',
+            fontFamily: 'Manrope', fontSize: '0.75rem', color: C.outline,
           }}>
             {createdDate}
           </p>
         </div>
-        <ChevronRight size={16} color="#444650" style={{ flexShrink: 0, marginTop: '2px' }} />
+        <ChevronRight size={16} color={C.outline} style={{ flexShrink: 0, marginTop: '2px' }} />
       </div>
 
       {/* Meta row */}
@@ -221,7 +234,7 @@ function MesocycleCard({ mesocycle, onClick }: { mesocycle: any; onClick: () => 
         <div style={{
           display: 'flex', alignItems: 'center', gap: '4px',
           padding: '4px 10px', borderRadius: '9999px',
-          backgroundColor: 'rgba(68,70,80,0.2)',
+          backgroundColor: `${status.color}22`,
         }}>
           <StatusIcon size={10} color={status.color} />
           <span style={{
@@ -234,14 +247,14 @@ function MesocycleCard({ mesocycle, onClick }: { mesocycle: any; onClick: () => 
         </div>
 
         <span style={{
-          fontFamily: 'Manrope', fontSize: '0.75rem', color: '#8e909c',
+          fontFamily: 'Manrope', fontSize: '0.75rem', color: C.onSurfaceVariant,
         }}>
           Week {mesocycle.currentWeek} of {mesocycle.totalWeeks}
         </span>
 
         {mesocycle.templateId && (
           <span style={{
-            fontFamily: 'Manrope', fontSize: '0.75rem', color: '#444650',
+            fontFamily: 'Manrope', fontSize: '0.75rem', color: C.outline,
           }}>
             {SPLIT_TYPE_LABELS[mesocycle.templateId] ?? mesocycle.templateId}
           </span>
@@ -253,21 +266,21 @@ function MesocycleCard({ mesocycle, onClick }: { mesocycle: any; onClick: () => 
         <div style={{ width: '100%' }}>
           <div style={{
             height: '2px',
-            backgroundColor: '#282a2e',
+            backgroundColor: C.surfaceHigh,
             borderRadius: '9999px',
             overflow: 'hidden',
           }}>
             <div style={{
               height: '100%',
               width: `${progressPct}%`,
-              background: 'linear-gradient(90deg, #b1c5ff, #59d8de)',
+              background: `linear-gradient(90deg, ${C.primary}, ${C.tertiary})`,
               borderRadius: '9999px',
               transition: 'width 0.3s ease',
             }} />
           </div>
           <p style={{
             fontFamily: 'Manrope', fontSize: '0.625rem',
-            color: '#444650', marginTop: '4px',
+            color: C.outline, marginTop: '4px',
             textAlign: 'right', letterSpacing: '0.05em',
           }}>
             {progressPct}% complete
@@ -291,24 +304,24 @@ function EmptyState({ onCreate }: { onCreate: () => void }) {
         backgroundColor: 'rgba(177,197,255,0.08)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}>
-        <Zap size={24} color="#444650" />
+        <Zap size={24} color={C.outline} />
       </div>
       <div>
         <p style={{
           fontFamily: "'Space Grotesk', sans-serif",
           fontSize: '1.1rem', fontWeight: 600,
-          letterSpacing: '-0.02em', color: '#e2e2e8', marginBottom: '8px',
+          letterSpacing: '-0.02em', color: C.onSurface, marginBottom: '8px',
         }}>
           No training blocks yet
         </p>
         <p style={{
           fontFamily: 'Manrope', fontSize: '0.875rem',
-          color: '#8e909c', lineHeight: 1.7, maxWidth: '260px',
+          color: C.onSurfaceVariant, lineHeight: 1.7, maxWidth: '260px',
         }}>
           Create your first mesocycle to start structured, adaptive training.
         </p>
       </div>
-      <button onClick={onCreate} className="btn-primary" style={{ color: '#002c70', width: '200px', marginTop: '8px' }}>
+      <button onClick={onCreate} className="btn-primary" style={{ width: '200px', marginTop: '8px' }}>
         Get started
       </button>
     </div>

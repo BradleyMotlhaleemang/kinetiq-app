@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Bell, ChevronLeft } from 'lucide-react';
 import { useNotificationsStore } from '@/store/notifications.store';
 import { notificationsApi } from '@/lib/api/notifications';
-import KinetiqLogo from './KinetiqLogo';
+import KinetiqLogo from '@/components/KinetiqLogo';
 
 interface AppHeaderProps {
   title?: string;
@@ -39,17 +39,19 @@ export default function AppHeader({
   }
 
   return (
-    <div style={{
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      padding: '48px 20px 16px',
+    <header style={{
       position: 'sticky',
       top: 0,
       zIndex: 40,
-      backgroundColor: 'rgba(17,19,24,0.85)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      padding: '0 20px',
+      height: 58,
+      background: 'rgba(22,24,32,0.80)',
       backdropFilter: 'blur(24px)',
       WebkitBackdropFilter: 'blur(24px)',
+      borderBottom: '1px solid #3a3c44',
     }}>
       {/* Left */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -58,7 +60,7 @@ export default function AppHeader({
             onClick={() => backHref ? router.push(backHref) : router.back()}
             style={{
               width: '32px', height: '32px', borderRadius: '50%',
-              backgroundColor: '#1a1c20', border: 'none', cursor: 'pointer',
+              backgroundColor: '#282a30', border: '1px solid #3a3c44', cursor: 'pointer',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               flexShrink: 0,
             }}
@@ -66,7 +68,7 @@ export default function AppHeader({
             <ChevronLeft size={16} color="#c5c6d2" />
           </button>
         )}
-        {!showBack && <KinetiqLogo size="sm" />}
+        <KinetiqLogo />
         {title && (
           <h1 style={{
             fontFamily: "'Space Grotesk', sans-serif",
@@ -83,7 +85,7 @@ export default function AppHeader({
         {rightAction}
         <button
           onClick={() => router.push('/notifications')}
-          style={{ position: 'relative', padding: '8px', background: 'none', border: 'none', cursor: 'pointer' }}
+          style={{ position: 'relative', padding: 6, background: 'none', border: 'none', cursor: 'pointer' }}
         >
           <Bell size={20} color="#8e909c" />
           {unreadCount > 0 && (
@@ -100,6 +102,6 @@ export default function AppHeader({
           )}
         </button>
       </div>
-    </div>
+    </header>
   );
 }

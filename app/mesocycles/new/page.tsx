@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 import { useRouter } from 'next/navigation';
 import AppHeader from '@/components/AppHeader';
 import { type MesocycleRecommendation, mesocyclesApi } from '@/lib/api/mesocycles';
@@ -17,6 +17,29 @@ import { exercisesApi } from '@/lib/api/exercises';
 type BuildMode = 'USE_TEMPLATE' | 'CREATE_FROM_SCRATCH';
 type ScratchExercise = { id: string; name: string; primaryMuscle?: string };
 type ScratchDay = { label: string; primaryMuscle: string; exercises: ScratchExercise[] };
+
+const sectionLabelStyle: CSSProperties = {
+  display: 'block',
+  fontFamily: 'Manrope, sans-serif',
+  fontSize: '0.57rem',
+  letterSpacing: '0.22em',
+  textTransform: 'uppercase',
+  color: '#8e909c',
+  fontWeight: 700,
+};
+
+const inputFieldStyle: CSSProperties = {
+  width: '100%',
+  padding: '12px 14px',
+  backgroundColor: '#161820',
+  border: '1px solid #3a3c44',
+  borderRadius: '12px',
+  color: '#e2e2e8',
+  fontFamily: 'Manrope, sans-serif',
+  fontSize: '14px',
+};
+
+const primaryGradient = 'linear-gradient(135deg, #b1c5ff 0%, #3a5cbf 100%)';
 
 const DEFAULT_SPLIT_DAYS: Record<SplitType, string[]> = {
   FULL_BODY: ['Day 1 - Full Body', 'Day 2 - Full Body', 'Day 3 - Full Body'],
@@ -136,14 +159,7 @@ export default function NewMesocyclePage() {
 
           {/* Name */}
           <div>
-            <label style={{
-              display: 'block',
-              fontFamily: 'Manrope',
-              fontSize: '0.875rem',
-              fontWeight: 600,
-              color: '#e2e2e8',
-              marginBottom: '8px',
-            }}>
+            <label style={{ ...sectionLabelStyle, marginBottom: '8px' }}>
               Block Name
             </label>
             <input
@@ -151,45 +167,20 @@ export default function NewMesocyclePage() {
               value={formData.name}
               onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
               placeholder="e.g., Strength Phase 1"
-              style={{
-                width: '100%',
-                padding: '12px 16px',
-                backgroundColor: '#1a1c20',
-                border: '1px solid #282a2e',
-                borderRadius: '8px',
-                color: '#e2e2e8',
-                fontFamily: 'Manrope',
-                fontSize: '0.875rem',
-              }}
+              style={inputFieldStyle}
               required
             />
           </div>
 
           {/* Duration */}
           <div>
-            <label style={{
-              display: 'block',
-              fontFamily: 'Manrope',
-              fontSize: '0.875rem',
-              fontWeight: 600,
-              color: '#e2e2e8',
-              marginBottom: '8px',
-            }}>
+            <label style={{ ...sectionLabelStyle, marginBottom: '8px' }}>
               Duration (weeks)
             </label>
             <select
               value={formData.totalWeeks}
               onChange={(e) => setFormData(prev => ({ ...prev, totalWeeks: parseInt(e.target.value) }))}
-              style={{
-                width: '100%',
-                padding: '12px 16px',
-                backgroundColor: '#1a1c20',
-                border: '1px solid #282a2e',
-                borderRadius: '8px',
-                color: '#e2e2e8',
-                fontFamily: 'Manrope',
-                fontSize: '0.875rem',
-              }}
+              style={inputFieldStyle}
             >
               <option value={4}>4 weeks</option>
               <option value={6}>6 weeks</option>
@@ -199,14 +190,52 @@ export default function NewMesocyclePage() {
           </div>
 
           <div>
-            <label style={{ display: 'block', fontFamily: 'Manrope', fontSize: '0.875rem', fontWeight: 600, color: '#e2e2e8', marginBottom: '8px' }}>
+            <label style={{ ...sectionLabelStyle, marginBottom: '8px' }}>
               Build Mode
             </label>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-              <button type="button" className="btn-ghost" onClick={() => setBuildMode('USE_TEMPLATE')} style={{ borderColor: buildMode === 'USE_TEMPLATE' ? '#59d8de' : '#282a2e', color: buildMode === 'USE_TEMPLATE' ? '#59d8de' : '#8e909c' }}>
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr',
+              gap: '4px',
+              padding: '4px',
+              backgroundColor: '#161820',
+              border: '1px solid #3a3c44',
+              borderRadius: '14px',
+            }}>
+              <button
+                type="button"
+                onClick={() => setBuildMode('USE_TEMPLATE')}
+                style={{
+                  padding: '12px 16px',
+                  borderRadius: '12px',
+                  border: buildMode === 'USE_TEMPLATE' ? 'none' : '1px solid #3a3c44',
+                  background: buildMode === 'USE_TEMPLATE' ? primaryGradient : 'transparent',
+                  color: buildMode === 'USE_TEMPLATE' ? '#05080f' : '#c5c6d2',
+                  fontFamily: buildMode === 'USE_TEMPLATE' ? "'Space Grotesk', sans-serif" : 'Manrope, sans-serif',
+                  fontWeight: buildMode === 'USE_TEMPLATE' ? 900 : 700,
+                  fontSize: '13px',
+                  cursor: 'pointer',
+                  width: '100%',
+                }}
+              >
                 Use Template
               </button>
-              <button type="button" className="btn-ghost" onClick={() => setBuildMode('CREATE_FROM_SCRATCH')} style={{ borderColor: buildMode === 'CREATE_FROM_SCRATCH' ? '#59d8de' : '#282a2e', color: buildMode === 'CREATE_FROM_SCRATCH' ? '#59d8de' : '#8e909c' }}>
+              <button
+                type="button"
+                onClick={() => setBuildMode('CREATE_FROM_SCRATCH')}
+                style={{
+                  padding: '12px 16px',
+                  borderRadius: '12px',
+                  border: buildMode === 'CREATE_FROM_SCRATCH' ? 'none' : '1px solid #3a3c44',
+                  background: buildMode === 'CREATE_FROM_SCRATCH' ? primaryGradient : 'transparent',
+                  color: buildMode === 'CREATE_FROM_SCRATCH' ? '#05080f' : '#c5c6d2',
+                  fontFamily: buildMode === 'CREATE_FROM_SCRATCH' ? "'Space Grotesk', sans-serif" : 'Manrope, sans-serif',
+                  fontWeight: buildMode === 'CREATE_FROM_SCRATCH' ? 900 : 700,
+                  fontSize: '13px',
+                  cursor: 'pointer',
+                  width: '100%',
+                }}
+              >
                 Create From Scratch
               </button>
             </div>
@@ -259,18 +288,22 @@ export default function NewMesocyclePage() {
           {buildMode === 'CREATE_FROM_SCRATCH' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div>
-                <label className="label-sm" style={{ color: '#8e909c', marginBottom: '8px', display: 'block' }}>
+                <label style={{ ...sectionLabelStyle, marginBottom: '8px' }}>
                   Split Type
                 </label>
-                <select value={splitType} onChange={(e) => setSplitType(e.target.value as SplitType)} className="k-input">
+                <select
+                  value={splitType}
+                  onChange={(e) => setSplitType(e.target.value as SplitType)}
+                  style={inputFieldStyle}
+                >
                   {Object.entries(SPLIT_LABELS).map(([value, label]) => (
                     <option key={value} value={value}>{label}</option>
                   ))}
                 </select>
               </div>
 
-              <div style={{ backgroundColor: '#1a1c20', border: '1px solid #282a2e', borderRadius: '8px', padding: '12px' }}>
-                <p className="label-sm" style={{ color: '#8e909c', marginBottom: '10px' }}>Weekly Structure</p>
+              <div style={{ backgroundColor: '#1e2026', border: '1px solid #3a3c44', borderRadius: '16px', padding: '16px' }}>
+                <p style={{ ...sectionLabelStyle, marginBottom: '10px', marginTop: 0 }}>Weekly Structure</p>
                 {splitType === 'CUSTOM' && (
                   <p style={{ fontFamily: 'Manrope', fontSize: '0.72rem', color: '#8e909c', marginBottom: '8px' }}>
                     Barebones setup. Add up to 6 days and assign focus per day.
@@ -278,12 +311,20 @@ export default function NewMesocyclePage() {
                 )}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                   {scratchDays.map((day, dayIndex) => (
-                    <div key={`${day.label}-${dayIndex}`} style={{ position: 'relative', border: '1px solid #282a2e', borderRadius: '8px', padding: '10px' }}>
-                      <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '4px', borderRadius: '8px 0 0 8px', backgroundColor: MUSCLE_FOCUS_COLOR[(day.primaryMuscle as keyof typeof MUSCLE_FOCUS_COLOR) ?? 'BALANCED'] ?? '#59d8de' }} />
-                      <div style={{ marginLeft: '8px' }}>
+                    <div
+                      key={`${day.label}-${dayIndex}`}
+                      style={{
+                        position: 'relative',
+                        backgroundColor: '#161820',
+                        borderLeft: '3px solid #59d8de',
+                        borderRadius: '12px',
+                        padding: '12px 14px',
+                      }}
+                    >
+                      <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 0, opacity: 0, pointerEvents: 'none' }} />
+                      <div style={{ marginLeft: 0 }}>
                         <p style={{ fontFamily: 'Manrope', fontSize: '0.78rem', color: '#e2e2e8', fontWeight: 600 }}>{day.label}</p>
                         <select
-                          className="k-input"
                           value={day.primaryMuscle}
                           onChange={(e) => {
                             const primaryMuscle = e.target.value;
@@ -293,7 +334,7 @@ export default function NewMesocyclePage() {
                                 : current
                             )));
                           }}
-                          style={{ marginTop: '6px' }}
+                          style={{ ...inputFieldStyle, marginTop: '6px' }}
                         >
                           <option value="GENERAL">General</option>
                           <option value="CHEST">Chest</option>
@@ -314,8 +355,19 @@ export default function NewMesocyclePage() {
                 </div>
                 <button
                   type="button"
-                  className="btn-ghost"
-                  style={{ marginTop: '10px' }}
+                  style={{
+                    marginTop: '10px',
+                    width: '100%',
+                    padding: '12px 16px',
+                    background: 'transparent',
+                    border: '1px solid #3a3c44',
+                    borderRadius: '10px',
+                    color: '#c5c6d2',
+                    fontFamily: 'Manrope, sans-serif',
+                    fontWeight: 700,
+                    fontSize: '13px',
+                    cursor: 'pointer',
+                  }}
                   onClick={() => {
                     if (scratchDays.length >= 6) return;
                     setCustomDaysCount((count) => Math.min(6, count + 1));
@@ -341,16 +393,14 @@ export default function NewMesocyclePage() {
             disabled={loading || !formData.name.trim()}
             style={{
               width: '100%',
-              padding: '16px',
-              background: loading ? '#444650' : 'linear-gradient(45deg, #b1c5ff, #002560)',
+              padding: '15px 0',
+              background: loading ? '#444650' : primaryGradient,
               border: 'none',
-              borderRadius: '8px',
-              color: loading ? '#8e909c' : '#002c70',
-              fontFamily: 'Manrope',
-              fontSize: '0.875rem',
-              fontWeight: 700,
-              letterSpacing: '0.1em',
-              textTransform: 'uppercase',
+              borderRadius: '14px',
+              color: loading ? '#8e909c' : '#05080f',
+              fontFamily: "'Space Grotesk', sans-serif",
+              fontSize: '15px',
+              fontWeight: 900,
               cursor: loading ? 'not-allowed' : 'pointer',
               marginTop: '16px',
             }}
