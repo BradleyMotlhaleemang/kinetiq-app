@@ -250,15 +250,14 @@ export default function NewMesocyclePage() {
                 const selected = selectedTemplate?.id === template.id;
                 const focusColor = MUSCLE_FOCUS_COLOR[template.muscleFocus];
                 return (
-                  <div key={template.id} style={{ position: 'relative', backgroundColor: '#1a1c20', border: selected ? '1px solid #59d8de' : '1px solid #282a2e', borderRadius: '8px', overflow: 'hidden' }}>
-                    <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '4px', backgroundColor: focusColor }} />
-                    <div style={{ display: 'flex', alignItems: 'start', justifyContent: 'space-between', gap: '8px', padding: '12px 12px 12px 16px' }}>
+                  <div key={template.id} style={{ position: 'relative', backgroundColor: '#1e2026', border: selected ? '1px solid #59d8de' : '1px solid #3a3c44', borderLeft: `3px solid ${focusColor}`, borderRadius: '16px', overflow: 'hidden' }}>
+                    <div style={{ display: 'flex', alignItems: 'start', justifyContent: 'space-between', gap: '8px', padding: '16px 16px 14px 18px' }}>
                       <button type="button" onClick={() => { setSelectedTemplate(template); setFormData((prev) => ({ ...prev, templateId: template.id, totalWeeks: template.durationWeeks })); }} style={{ flex: 1, background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left', padding: 0 }}>
-                        <p style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: '0.95rem', color: '#e2e2e8', fontWeight: 600 }}>{template.programName}</p>
+                        <p style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 'clamp(1.1rem,4vw,1.3rem)', color: '#e2e2e8', fontWeight: 800, letterSpacing: '-0.035em' }}>{template.programName}</p>
                         <p style={{ fontFamily: 'Manrope', fontSize: '0.75rem', color: '#8e909c' }}>
                           {SPLIT_LABELS[template.splitType]} • {template.weeklyStructure.length} days/week • {template.durationWeeks} weeks
                         </p>
-                        <p style={{ fontFamily: 'Manrope', fontSize: '0.7rem', color: '#444650', marginTop: '6px' }}>
+                        <p style={{ fontFamily: 'Manrope', fontSize: '0.7rem', color: '#8e909c', marginTop: '6px' }}>
                           {template.tags.join(' · ')}
                         </p>
                         {template.highIntensity && (
@@ -412,7 +411,7 @@ export default function NewMesocyclePage() {
 
       {pickerDayIndex !== null && (
         <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(12,14,18,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px', zIndex: 40 }}>
-          <div style={{ width: '100%', maxWidth: '420px', backgroundColor: '#1a1c20', border: '1px solid #282a2e', borderRadius: '10px', padding: '12px' }}>
+          <div style={{ width: '100%', maxWidth: '420px', backgroundColor: '#1e2026', border: '1px solid #3a3c44', borderRadius: '16px', padding: '12px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
               <p style={{ fontFamily: "'Space Grotesk', sans-serif", color: '#e2e2e8', fontSize: '1rem', fontWeight: 600 }}>Add Exercise</p>
               <button type="button" onClick={() => setPickerDayIndex(null)} style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}><X size={16} color="#8e909c" /></button>
@@ -448,7 +447,7 @@ export default function NewMesocyclePage() {
                       }));
                       setPickerDayIndex(null);
                     }}
-                    style={{ backgroundColor: '#111318', border: '1px solid #282a2e', borderRadius: '8px', padding: '8px', textAlign: 'left', cursor: 'pointer' }}
+                    style={{ backgroundColor: '#161820', border: '1px solid #3a3c44', borderRadius: '10px', padding: '8px', textAlign: 'left', cursor: 'pointer' }}
                   >
                     <p style={{ fontFamily: 'Manrope', color: '#e2e2e8', fontSize: '0.82rem', margin: 0 }}>{item.name}</p>
                     <p style={{ fontFamily: 'Manrope', color: '#8e909c', fontSize: '0.68rem', margin: 0 }}>{item.primaryMuscle ?? 'General'}</p>
@@ -461,7 +460,7 @@ export default function NewMesocyclePage() {
 
       {infoTemplate && (
         <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(12,14,18,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px', zIndex: 50 }}>
-          <div style={{ width: '100%', maxWidth: '430px', backgroundColor: '#1a1c20', border: '1px solid #282a2e', borderRadius: '10px', padding: '14px' }}>
+          <div style={{ width: '100%', maxWidth: '430px', backgroundColor: '#1e2026', border: '1px solid #3a3c44', borderRadius: '16px', padding: '14px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
               <p style={{ fontFamily: "'Space Grotesk', sans-serif", color: '#e2e2e8', fontSize: '1rem', fontWeight: 700 }}>{infoTemplate.programName}</p>
               <button type="button" onClick={() => setInfoTemplate(null)} style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}>

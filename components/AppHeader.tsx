@@ -72,8 +72,8 @@ export default function AppHeader({
         {title && (
           <h1 style={{
             fontFamily: "'Space Grotesk', sans-serif",
-            fontSize: '1rem', fontWeight: 600,
-            letterSpacing: '-0.02em', color: '#e2e2e8', margin: 0,
+            fontSize: '20px', fontWeight: 900,
+            letterSpacing: '-0.04em', color: '#e2e2e8', margin: 0,
           }}>
             {title}
           </h1>
