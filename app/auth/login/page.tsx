@@ -7,7 +7,7 @@ import { useAuthStore } from '@/store/auth.store';
 
 export default function LoginPage() {
   const router = useRouter();
-  const { setTokens } = useAuthStore();
+  const { setTokens, enableDevBypass } = useAuthStore();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -26,6 +26,11 @@ export default function LoginPage() {
     } finally {
       setLoading(false);
     }
+  }
+
+  function handleDevBypass() {
+    enableDevBypass();
+    router.push('/dashboard');
   }
 
   return (
@@ -93,6 +98,14 @@ export default function LoginPage() {
 
           <button type="submit" className="btn-primary" disabled={loading} style={{ marginTop: '8px', color: '#002c70' }}>
             {loading ? 'Authenticating...' : 'Sign In'}
+          </button>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={handleDevBypass}
+            style={{ marginTop: '8px' }}
+          >
+            Continue in Demo Mode
           </button>
         </form>
 
