@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { DEV_BYPASS_TOKEN } from '@/lib/auth/devBypass';
 
 interface AuthState {
   accessToken: string | null;
@@ -7,6 +8,7 @@ interface AuthState {
   email: string | null;
   hydrated: boolean;
   setTokens: (accessToken: string, refreshToken: string) => void;
+  enableDevBypass: () => void;
   setUser: (userId: string, email: string) => void;
   logout: () => void;
   isAuthenticated: () => boolean;
@@ -30,6 +32,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     sessionStorage.setItem('accessToken', accessToken);
     sessionStorage.setItem('refreshToken', refreshToken);
     set({ accessToken, refreshToken });
+  },
+
+  enableDevBypass: () => {
+    sessionStorage.setItem('accessToken', DEV_BYPASS_TOKEN);
+    sessionStorage.removeItem('refreshToken');
+    set({
+      accessToken: DEV_BYPASS_TOKEN,
+      refreshToken: null,
+      userId: 'dev-user',
+      email: 'dev@local',
+    });
   },
 
   setUser: (userId, email) => set({ userId, email }),
