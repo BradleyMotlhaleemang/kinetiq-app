@@ -7,7 +7,7 @@ import { useAuthStore } from '@/store/auth.store';
 
 export default function RegisterPage() {
   const router = useRouter();
-  const { setTokens } = useAuthStore();
+  const { setTokens, enableDevBypass } = useAuthStore();
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -27,6 +27,11 @@ export default function RegisterPage() {
     } finally {
       setLoading(false);
     }
+  }
+
+  function handleDevBypass() {
+    enableDevBypass();
+    router.push('/dashboard');
   }
 
   return (
@@ -102,6 +107,14 @@ export default function RegisterPage() {
             style={{ marginTop: '8px', color: '#002c70' }}
           >
             {loading ? 'Creating account...' : 'Create Account'}
+          </button>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={handleDevBypass}
+            style={{ marginTop: '8px' }}
+          >
+            Continue in Demo Mode
           </button>
         </form>
 
