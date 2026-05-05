@@ -5,7 +5,7 @@ import { useRouter, useParams } from 'next/navigation';
 import { workoutsApi } from '@/lib/api/workouts';
 import { exercisesApi } from '@/lib/api/exercises';
 import { useSessionStore } from '@/store/session.store';
-import { Check, Clock3, GripVertical, Plus, Search, Trash2, X, RotateCcw } from 'lucide-react';
+import { Check, GripVertical, Plus, Search, Trash2, X, RotateCcw } from 'lucide-react';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -23,10 +23,22 @@ type SetRow = {
   completed: boolean;
 };
 
+type ExercisePrescription = {
+  exerciseId: string;
+  action: string;
+  actionLabel: string;
+  weightTarget: number;
+  sessionMode: string;
+  sessionModeLabel: string;
+  sessionModeColor: string;
+  reason: string;
+};
+
+const EMPTY_EXERCISES: ExerciseItem[] = [];
+
 // ─── Brand color palette (Kinetiq) ───────────────────────────────────────────
 
 const PRIMARY = '#b1c5ff';       // brand primary (cool blue)
-const PRIMARY_DIM = 'rgba(177,197,255,0.12)';
 const PRIMARY_GLOW = 'rgba(177,197,255,0.45)';
 const TERTIARY = '#59d8de';      // teal accent
 const SURFACE = '#111318';       // darkest bg
@@ -181,6 +193,8 @@ function ExerciseCard({
   exercise,
   rows,
   accentColor,
+  isActive,
+  onActivate,
   draggingId,
   onDragStart,
   onDragOver,
@@ -194,6 +208,8 @@ function ExerciseCard({
   exercise: ExerciseItem;
   rows: SetRow[];
   accentColor: string;
+  isActive: boolean;
+  onActivate: () => void;
   draggingId: string | null;
   onDragStart: () => void;
   onDragOver: (e: React.DragEvent) => void;
@@ -213,15 +229,17 @@ function ExerciseCard({
       onDragStart={onDragStart}
       onDragOver={onDragOver}
       onDrop={onDrop}
+      onClick={onActivate}
       style={{
         backgroundColor: SURFACE_CONTAINER,
-        border: `1px solid ${isDragging ? accentColor + '66' : SURFACE_HIGH}`,
+        border: `1px solid ${isActive ? accentColor + '88' : isDragging ? accentColor + '66' : SURFACE_HIGH}`,
         borderRadius: '20px',
         padding: '18px 16px 14px',
         position: 'relative',
         opacity: isDragging ? 0.5 : 1,
-        transition: 'opacity 0.15s, border-color 0.15s',
+        transition: 'opacity 0.15s, border-color 0.15s, box-shadow 0.15s',
         overflow: 'hidden',
+        boxShadow: isActive ? `0 0 20px -10px ${accentColor}99` : 'none',
       }}
     >
       {/* Left accent line */}
@@ -421,7 +439,14 @@ export default function WorkoutPage() {
   const router = useRouter();
   const params = useParams();
   const workoutId = params.id as string;
-  const { addSet, clearSession } = useSessionStore();
+  const {
+    addSet,
+    clearSession,
+    prescriptions,
+    setPrescription,
+    setSessionMode,
+    sessionMode,
+  } = useSessionStore();
 
   const [workout, setWorkout] = useState<any>(null);
   const [exercises, setExercises] = useState<ExerciseItem[]>([]);
@@ -436,6 +461,11 @@ export default function WorkoutPage() {
   const [exerciseQuery, setExerciseQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('ALL');
   const [draggingExerciseId, setDraggingExerciseId] = useState<string | null>(null);
+  const [activeExerciseId, setActiveExerciseId] = useState<string | null>(null);
+  const [prescriptionLoadingByExercise, setPrescriptionLoadingByExercise] =
+    useState<Record<string, boolean>>({});
+  const [prescriptionErrorByExercise, setPrescriptionErrorByExercise] =
+    useState<Record<string, boolean>>({});
 
   // Live timer
   const [elapsedSec, setElapsedSec] = useState(0);
@@ -589,6 +619,113 @@ export default function WorkoutPage() {
     .flat()
     .reduce((acc, row) => acc + (Number(row.weight) || 0) * (Number(row.reps) || 0), 0);
 
+  const currentDay = sessionDays[activeDayIndex] ?? sessionDays[0];
+  const currentWeek = workout?.currentWeek ?? 1;
+  const dayLabel = currentDay?.label ?? workout?.splitDayLabel ?? 'Day 1';
+  const dayNumber = activeDayIndex + 1;
+  const dayExercises = currentDay?.exercises ?? EMPTY_EXERCISES;
+  const activeExercise =
+    dayExercises.find((exercise) => exercise.id === activeExerciseId) ??
+    dayExercises[0] ??
+    null;
+  const activePrescription = activeExercise
+    ? prescriptions[activeExercise.id]
+    : undefined;
+  const prescriptionLoading = activeExercise
+    ? !!prescriptionLoadingByExercise[activeExercise.id]
+    : false;
+  const prescriptionError = activeExercise
+    ? !!prescriptionErrorByExercise[activeExercise.id]
+    : false;
+
+  useEffect(() => {
+    if (!dayExercises.length) {
+      setActiveExerciseId(null);
+      return;
+    }
+
+    setActiveExerciseId((current) => {
+      if (current && dayExercises.some((exercise) => exercise.id === current)) {
+        return current;
+      }
+      return dayExercises[0].id;
+    });
+  }, [dayExercises]);
+
+  useEffect(() => {
+    if (!activeExerciseId) return;
+
+    const cached = prescriptions[activeExerciseId];
+    if (cached) {
+      if (!sessionMode && cached.sessionMode && cached.sessionModeLabel) {
+        setSessionMode(cached.sessionMode, cached.sessionModeLabel);
+      }
+      return;
+    }
+
+    let cancelled = false;
+    setPrescriptionLoadingByExercise((current) => ({
+      ...current,
+      [activeExerciseId]: true,
+    }));
+    setPrescriptionErrorByExercise((current) => ({
+      ...current,
+      [activeExerciseId]: false,
+    }));
+
+    workoutsApi
+      .getPrescription(workoutId, activeExerciseId)
+      .then((res) => {
+        if (cancelled) return;
+        const data = res?.data;
+        if (!data || typeof data !== 'object') {
+          throw new Error('Invalid prescription response');
+        }
+
+        const prescription: ExercisePrescription = {
+          exerciseId: activeExerciseId,
+          action: data.action ?? 'HOLD',
+          actionLabel: data.actionLabel ?? 'Hold',
+          weightTarget:
+            typeof data.weightTarget === 'number' ? data.weightTarget : 0,
+          sessionMode: data.sessionMode ?? 'FULL',
+          sessionModeLabel: data.sessionModeLabel ?? 'Full Session',
+          sessionModeColor: data.sessionModeColor ?? PRIMARY,
+          reason: data.reason ?? 'No detailed recommendation provided.',
+        };
+
+        setPrescription(activeExerciseId, prescription);
+        if (!sessionMode && prescription.sessionMode && prescription.sessionModeLabel) {
+          setSessionMode(prescription.sessionMode, prescription.sessionModeLabel);
+        }
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setPrescriptionErrorByExercise((current) => ({
+          ...current,
+          [activeExerciseId]: true,
+        }));
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setPrescriptionLoadingByExercise((current) => ({
+          ...current,
+          [activeExerciseId]: false,
+        }));
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeExerciseId,
+    prescriptions,
+    sessionMode,
+    setPrescription,
+    setSessionMode,
+    workoutId,
+  ]);
+
   if (loading) {
     return (
       <div style={{ minHeight: '100dvh', backgroundColor: SURFACE, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -596,12 +733,6 @@ export default function WorkoutPage() {
       </div>
     );
   }
-
-  const currentDay = sessionDays[activeDayIndex] ?? sessionDays[0];
-  const currentWeek = workout?.currentWeek ?? 1;
-  const dayLabel = currentDay?.label ?? workout?.splitDayLabel ?? 'Day 1';
-  const dayNumber = activeDayIndex + 1;
-  const dayExercises = currentDay?.exercises ?? [];
 
   return (
     <div
@@ -679,22 +810,7 @@ export default function WorkoutPage() {
             </h1>
           </div>
 
-          <button
-            type="button"
-            style={{
-              width: '38px',
-              height: '38px',
-              borderRadius: '9999px',
-              backgroundColor: PRIMARY_DIM,
-              border: `1px solid ${PRIMARY}55`,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'pointer',
-            }}
-          >
-            <Clock3 size={15} color={PRIMARY} />
-          </button>
+          <div style={{ width: '38px', height: '38px' }} />
         </header>
 
         {/* ── Day tabs ── */}
@@ -727,6 +843,126 @@ export default function WorkoutPage() {
         )}
 
         {/* ── Exercise cards ── */}
+        {activeExercise && (
+          <div
+            style={{
+              marginBottom: '14px',
+              backgroundColor: SURFACE_CONTAINER,
+              border: `1px solid ${SURFACE_HIGH}`,
+              borderLeft: `3px solid ${activePrescription?.sessionModeColor ?? PRIMARY}`,
+              borderRadius: '16px',
+              padding: '14px 14px 12px',
+            }}
+          >
+            <p
+              style={{
+                margin: '0 0 6px',
+                fontSize: '0.58rem',
+                letterSpacing: '0.18em',
+                textTransform: 'uppercase',
+                fontWeight: 700,
+                color: OUTLINE,
+              }}
+            >
+              Engine Prescription
+            </p>
+            {prescriptionLoading ? (
+              <div>
+                <div
+                  style={{
+                    width: '42%',
+                    height: '22px',
+                    borderRadius: '8px',
+                    backgroundColor: SURFACE_HIGH,
+                    marginBottom: '8px',
+                  }}
+                />
+                <div
+                  style={{
+                    width: '100%',
+                    height: '12px',
+                    borderRadius: '6px',
+                    backgroundColor: SURFACE_HIGH,
+                    opacity: 0.7,
+                  }}
+                />
+              </div>
+            ) : activePrescription ? (
+              <div>
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '8px',
+                    marginBottom: '8px',
+                    flexWrap: 'wrap',
+                  }}
+                >
+                  <p
+                    style={{
+                      margin: 0,
+                      fontFamily: "'Space Grotesk', sans-serif",
+                      fontSize: '1.02rem',
+                      fontWeight: 800,
+                      color: ON_SURFACE,
+                    }}
+                  >
+                    Target: {activePrescription.weightTarget}kg
+                  </p>
+                  <span
+                    style={{
+                      fontSize: '0.64rem',
+                      letterSpacing: '0.08em',
+                      textTransform: 'uppercase',
+                      fontWeight: 700,
+                      color: activePrescription.sessionModeColor,
+                      backgroundColor: `${activePrescription.sessionModeColor}22`,
+                      border: `1px solid ${activePrescription.sessionModeColor}55`,
+                      borderRadius: '9999px',
+                      padding: '4px 8px',
+                    }}
+                  >
+                    {activePrescription.actionLabel}
+                  </span>
+                </div>
+                <p
+                  style={{
+                    margin: 0,
+                    color: OUTLINE,
+                    fontSize: '0.74rem',
+                    lineHeight: 1.35,
+                  }}
+                >
+                  {activePrescription.reason}
+                </p>
+                <p
+                  style={{
+                    margin: '8px 0 0',
+                    color: activePrescription.sessionModeColor,
+                    fontSize: '0.68rem',
+                    fontWeight: 700,
+                    letterSpacing: '0.06em',
+                    textTransform: 'uppercase',
+                  }}
+                >
+                  {activePrescription.sessionModeLabel}
+                </p>
+              </div>
+            ) : (
+              <p
+                style={{
+                  margin: 0,
+                  color: prescriptionError ? ERROR : OUTLINE,
+                  fontSize: '0.74rem',
+                }}
+              >
+                No recommendation available
+              </p>
+            )}
+          </div>
+        )}
+
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
           {dayExercises.map((exercise) => {
             const rows = setRows[exercise.id] ?? (() => {
@@ -747,6 +983,8 @@ export default function WorkoutPage() {
                 exercise={exercise}
                 rows={rows}
                 accentColor={accent}
+                isActive={activeExerciseId === exercise.id}
+                onActivate={() => setActiveExerciseId(exercise.id)}
                 draggingId={draggingExerciseId}
                 onDragStart={() => setDraggingExerciseId(exercise.id)}
                 onDragOver={(e) => e.preventDefault()}
