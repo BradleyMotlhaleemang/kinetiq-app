@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { authApi } from '@/lib/api/auth';
+import api from '@/lib/api/client';
 import { useAuthStore } from '@/store/auth.store';
 
 export default function LoginPage() {
@@ -20,6 +21,16 @@ export default function LoginPage() {
     try {
       const res = await authApi.login(email, password);
       setTokens(res.data.accessToken, res.data.refreshToken);
+      try {
+        const meRes = await api.get('/api/v1/users/me');
+        const onboardingCompletedAt = meRes?.data?.onboardingCompletedAt;
+        if (!onboardingCompletedAt) {
+          router.push('/onboarding');
+          return;
+        }
+      } catch {
+        // Keep login resilient: default to dashboard if profile lookup fails.
+      }
       router.push('/dashboard');
     } catch {
       setError('Invalid email or password');
