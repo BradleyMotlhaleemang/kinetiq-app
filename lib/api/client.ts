@@ -1,4 +1,6 @@
-/** API origin only — request paths must include `/api/v1/...` (Nest `setGlobalPrefix('api/v1')`). */
+import { DEV_BYPASS_TOKEN } from '@/lib/auth/devBypass';
+
+/** API origin only - request paths must include `/api/v1/...` (Nest `setGlobalPrefix('api/v1')`). */
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 
 function getToken() {
@@ -22,7 +24,7 @@ async function request(method: string, path: string, body?: any) {
   });
 
   if (res.status === 401) {
-    if (typeof window !== 'undefined') {
+    if (typeof window !== 'undefined' && token !== DEV_BYPASS_TOKEN) {
       sessionStorage.removeItem('accessToken');
       sessionStorage.removeItem('refreshToken');
       window.location.href = '/auth/login';
