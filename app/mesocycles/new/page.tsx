@@ -27,7 +27,7 @@ const sectionLabelStyle: CSSProperties = {
   color: '#8e909c',
   fontWeight: 700,
 };
-
+//defining  styling 
 const inputFieldStyle: CSSProperties = {
   width: '100%',
   padding: '12px 14px',
