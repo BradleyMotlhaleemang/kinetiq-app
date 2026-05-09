@@ -4,8 +4,9 @@ import { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import AppHeader from '@/components/AppHeader';
 import { mesocyclesApi } from '@/lib/api/mesocycles';
+import { ApiError } from '@/lib/api/client';
+import { templatesApi, type TemplateListItem } from '@/lib/api/templates';
 import { Plus, ChevronRight, CheckCircle, Clock, Zap } from 'lucide-react';
-import { MUSCLE_FOCUS_COLOR, TEMPLATE_CATALOG, SPLIT_LABELS } from '@/lib/templates/catalog';
 
 const C = {
   surface: '#111318',
@@ -40,10 +41,13 @@ const SPLIT_TYPE_LABELS: Record<string, string> = {
   SHOULDER_FOCUS: 'Shoulder Focus',
 };
 
+const TEMPLATE_ACCENT_COLORS = ['#59d8de', '#b1c5ff', '#d4bbff', '#a2e7ff'];
+
 export default function MesocyclesPage() {
   const router = useRouter();
   const pathname = usePathname();
   const [mesocycles, setMesocycles] = useState<any[]>([]);
+  const [templates, setTemplates] = useState<TemplateListItem[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -58,10 +62,19 @@ export default function MesocyclesPage() {
       const data = Array.isArray(res.data) ? res.data : [];
       console.log('Loaded mesocycles:', data);
       setMesocycles(data);
+      const templateRes = await templatesApi.all();
+      setTemplates(Array.isArray(templateRes.data) ? templateRes.data : []);
     } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        // Auth client already clears tokens and redirects on 401.
+        setMesocycles([]);
+        setTemplates([]);
+        return;
+      }
       console.error('Failed to load mesocycles:', err);
       // Set empty array to prevent crashes - this will show the empty state
       setMesocycles([]);
+      setTemplates([]);
     } finally {
       setLoading(false);
     }
@@ -153,14 +166,14 @@ export default function MesocyclesPage() {
                 Templates
               </p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {TEMPLATE_CATALOG.map((template) => (
+                {templates.map((template, index) => (
                   <div key={template.id} style={{ position: 'relative', backgroundColor: C.surfaceContainer, border: `1px solid ${C.outlineVariant}`, borderRadius: '12px', padding: '12px 12px 12px 16px' }}>
-                    <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '5px', borderRadius: '12px 0 0 12px', backgroundColor: MUSCLE_FOCUS_COLOR[template.muscleFocus] ?? C.tertiary, boxShadow: `0 0 10px ${MUSCLE_FOCUS_COLOR[template.muscleFocus] ?? C.tertiary}` }} />
+                    <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '5px', borderRadius: '12px 0 0 12px', backgroundColor: TEMPLATE_ACCENT_COLORS[index % TEMPLATE_ACCENT_COLORS.length]!, boxShadow: `0 0 10px ${TEMPLATE_ACCENT_COLORS[index % TEMPLATE_ACCENT_COLORS.length]!}` }} />
                     <p style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: '0.92rem', fontWeight: 600, color: C.onSurface }}>
-                      {template.programName}
+                      {template.name}
                     </p>
                     <p style={{ fontFamily: 'Manrope', fontSize: '0.72rem', color: C.onSurfaceVariant, marginTop: '2px' }}>
-                      {SPLIT_LABELS[template.splitType]} • {template.weeklyStructure.length} days/week • {template.durationWeeks} weeks
+                      {template.splitStyleLabel} • {template.daysPerWeek} days/week • {template.durationWeeks} weeks
                     </p>
                   </div>
                 ))}
@@ -252,11 +265,11 @@ function MesocycleCard({ mesocycle, onClick }: { mesocycle: any; onClick: () => 
           Week {mesocycle.currentWeek} of {mesocycle.totalWeeks}
         </span>
 
-        {mesocycle.templateId && (
+        {mesocycle.templateSplitType && (
           <span style={{
             fontFamily: 'Manrope', fontSize: '0.75rem', color: C.outline,
           }}>
-            {SPLIT_TYPE_LABELS[mesocycle.templateId] ?? mesocycle.templateId}
+            {SPLIT_TYPE_LABELS[mesocycle.templateSplitType] ?? mesocycle.templateSplitType}
           </span>
         )}
       </div>

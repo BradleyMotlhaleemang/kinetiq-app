@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/auth.store';
 import { workoutsApi } from '@/lib/api/workouts';
+import { ApiError } from '@/lib/api/client';
 import { Dumbbell, ChevronRight } from 'lucide-react';
 
 export default function HistoryPage() {
@@ -25,6 +26,10 @@ export default function HistoryPage() {
       const res = await workoutsApi.history();
       setWorkouts(res.data);
     } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        setWorkouts([]);
+        return;
+      }
       console.error(err);
     } finally {
       setLoading(false);

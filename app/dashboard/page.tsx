@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/auth.store';
 import { mesocyclesApi } from '@/lib/api/mesocycles';
 import { workoutsApi } from '@/lib/api/workouts';
+import { ApiError } from '@/lib/api/client';
 import { ChevronRight, Play, Trophy, Zap } from 'lucide-react';
 import AppHeader from '@/components/AppHeader';
 
@@ -268,7 +269,14 @@ export default function DashboardPage() {
       ]);
       if (mesoRes.status === 'fulfilled') setMesocycle(mesoRes.value.data);
       if (histRes.status === 'fulfilled') setRecentWorkouts(histRes.value.data.slice(0, 3));
-    } catch (err) { console.error(err); }
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        setMesocycle(null);
+        setRecentWorkouts([]);
+        return;
+      }
+      console.error(err);
+    }
     finally      { setLoading(false); }
   }
 
@@ -276,7 +284,16 @@ export default function DashboardPage() {
     try {
       const res = await workoutsApi.create({ mesocycleId: mesocycle?.id });
       router.push(`/workout/${res.data.id}`);
-    } catch (err) { console.error(err); }
+    } catch (err) {
+      if (err instanceof ApiError) {
+        console.error(
+          `Failed to start workout (${err.status}): ${err.message}`,
+          err.data,
+        );
+        return;
+      }
+      console.error('Failed to start workout:', err);
+    }
   }
 
   if (loading) {

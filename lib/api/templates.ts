@@ -20,27 +20,27 @@ export interface TemplateListItem {
 }
 
 export interface TemplateDetail extends TemplateListItem {
-  progressionNotes: string | null;
-  deloadWeek: number | null;
-  deloadNotes: string | null;
-  trainingDays: Array<{
-    dayNumber: number;
-    label: string;
-    isRestDay: boolean;
-    workoutTemplate: {
-      id: string;
-      slug: string;
-      name: string;
-      level: string;
-      primaryMuscle: string;
-      slots: Array<{
-        order: number;
-        slotLabel: string;
-        sets: string;
-        reps: string;
-        rpe: string;
+  description: string | null;
+  goalTags: string[];
+  experienceTags: string[];
+  splitConfigs: Array<{
+    id: string;
+    splitLabel: string;
+    days: Array<{
+      dayNumber: number;
+      label: string;
+      exercises: Array<{
+        orderIndex: number;
+        setsTarget: number;
+        repRangeMin: number;
+        repRangeMax: number;
+        exercise: {
+          id: string;
+          name: string;
+          primaryMuscle: string | null;
+        } | null;
       }>;
-    } | null;
+    }>;
   }>;
   programSummary: {
     mesocycleBlocks: number;
@@ -70,5 +70,11 @@ export const templatesApi = {
     const query = search.toString();
     return api.get(`/api/v1/templates${query ? `?${query}` : ''}`);
   },
+  recommended: (daysAvailable?: number) =>
+    api.get(
+      `/api/v1/templates/recommended${
+        daysAvailable ? `?daysAvailable=${daysAvailable}` : ''
+      }`,
+    ),
   findOne: (idOrSlug: string) => api.get(`/api/v1/templates/${idOrSlug}`),
 };

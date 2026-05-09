@@ -47,7 +47,13 @@ If port `3001` is busy, Next.js may choose another port automatically and print 
 
 ## Recommended Full Local Run (Frontend + API)
 
-From the repo root (`Kinetiq`), use two terminals:
+From the repo root (`Kinetiq`), first run:
+
+```bash
+npm run setup
+```
+
+Then use two terminals:
 
 Terminal 1 (API):
 
@@ -64,6 +70,24 @@ cd kinetiq-app
 npm install
 npm run dev
 ```
+
+## Data Source Of Truth
+
+Templates and seeded starter data are now API-driven from database records.
+
+- `GET /api/v1/templates`
+- `GET /api/v1/templates/:id`
+- `GET /api/v1/templates/recommended`
+
+Frontend template flows (`/templates`, `/mesocycles`, `/mesocycles/new`) should not use hardcoded catalogs.
+
+## Remaining Static UI Candidates (Future Refactor)
+
+These still contain presentation-only static placeholders and can be migrated later:
+
+- dashboard insight mock cards and chart sample values
+- onboarding option labels/descriptions
+- notifications type label/description maps
 
 ## Useful Commands
 

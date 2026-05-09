@@ -3,20 +3,33 @@
 import { useEffect, useState, type CSSProperties } from 'react';
 import { useRouter } from 'next/navigation';
 import AppHeader from '@/components/AppHeader';
-import { type MesocycleRecommendation, mesocyclesApi } from '@/lib/api/mesocycles';
-import {
-  MUSCLE_FOCUS_COLOR,
-  SPLIT_LABELS,
-  TEMPLATE_CATALOG,
-  type SplitType,
-  type TemplateDefinition,
-} from '@/lib/templates/catalog';
+import { mesocyclesApi } from '@/lib/api/mesocycles';
+import { ApiError } from '@/lib/api/client';
+import { templatesApi, type TemplateDetail, type TemplateListItem } from '@/lib/api/templates';
 import { AlertTriangle, Info, Search, X } from 'lucide-react';
 import { exercisesApi } from '@/lib/api/exercises';
 
 type BuildMode = 'USE_TEMPLATE' | 'CREATE_FROM_SCRATCH';
 type ScratchExercise = { id: string; name: string; primaryMuscle?: string };
 type ScratchDay = { label: string; primaryMuscle: string; exercises: ScratchExercise[] };
+type SplitType =
+  | 'FULL_BODY'
+  | 'PPL'
+  | 'UPPER_LOWER'
+  | 'BODY_PART_SPLIT'
+  | 'POWERBUILDING'
+  | 'CUSTOM';
+
+type TemplateCard = TemplateListItem & { detail?: TemplateDetail | null };
+
+const SPLIT_LABELS: Record<SplitType, string> = {
+  FULL_BODY: 'Full Body',
+  PPL: 'Push Pull Legs',
+  UPPER_LOWER: 'Upper Lower',
+  BODY_PART_SPLIT: 'Bodybuilding / Hypertrophy',
+  POWERBUILDING: 'Powerbuilding',
+  CUSTOM: 'Custom Split',
+};
 
 const sectionLabelStyle: CSSProperties = {
   display: 'block',
@@ -54,14 +67,15 @@ export default function NewMesocyclePage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [buildMode, setBuildMode] = useState<BuildMode>('USE_TEMPLATE');
-  const [selectedTemplate, setSelectedTemplate] = useState<TemplateDefinition | null>(null);
-  const [infoTemplate, setInfoTemplate] = useState<TemplateDefinition | null>(null);
+  const [selectedTemplate, setSelectedTemplate] = useState<TemplateCard | null>(null);
+  const [infoTemplate, setInfoTemplate] = useState<TemplateCard | null>(null);
+  const [templates, setTemplates] = useState<TemplateCard[]>([]);
   const [formData, setFormData] = useState({
     name: '',
     totalWeeks: 4,
     templateId: '',
   });
-  const [recommendations, setRecommendations] = useState<MesocycleRecommendation | null>(null);
+  const [recommendationRationale, setRecommendationRationale] = useState<string | null>(null);
   const [splitType, setSplitType] = useState<SplitType>('UPPER_LOWER');
   const [customDaysCount, setCustomDaysCount] = useState(3);
   const [scratchDays, setScratchDays] = useState<ScratchDay[]>(
@@ -79,9 +93,34 @@ export default function NewMesocyclePage() {
 
   async function loadRecommendations() {
     try {
-      const res = await mesocyclesApi.recommend();
-      setRecommendations(res.data as MesocycleRecommendation);
+      const [recommendedRes, templatesRes] = await Promise.all([
+        templatesApi.recommended(),
+        templatesApi.all(),
+      ]);
+      const allTemplates = Array.isArray(templatesRes.data)
+        ? (templatesRes.data as TemplateListItem[])
+        : [];
+      setTemplates(allTemplates);
+      const recommendedTemplate = (recommendedRes.data?.recommended ??
+        null) as TemplateDetail | null;
+      const rationale = (recommendedRes.data?.rationale ?? null) as string | null;
+      setRecommendationRationale(rationale);
+      if (recommendedTemplate) {
+        setSelectedTemplate(recommendedTemplate);
+        const weeks = Number.parseInt(
+          (recommendedTemplate.durationWeeks ?? '8').split('–')[0] ?? '8',
+          10,
+        );
+        setFormData((current) => ({
+          ...current,
+          templateId: recommendedTemplate.id,
+          totalWeeks: Number.isNaN(weeks) ? current.totalWeeks : weeks,
+        }));
+      }
     } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        return;
+      }
       const errorMsg = err instanceof Error ? err.message : JSON.stringify(err);
       console.error('Failed to load recommendations:', errorMsg);
     }
@@ -92,6 +131,10 @@ export default function NewMesocyclePage() {
       const list = Array.isArray(res.data) ? res.data : [];
       setAllExercises(list);
     } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        setAllExercises([]);
+        return;
+      }
       console.error('Failed to load exercises:', err);
     }
   }
@@ -139,6 +182,9 @@ export default function NewMesocyclePage() {
       }
       router.push('/mesocycles');
     } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        return;
+      }
       console.error('Failed to create mesocycle:', err);
       alert('Failed to create mesocycle');
     } finally {
@@ -246,39 +292,59 @@ export default function NewMesocyclePage() {
               <p className="label-sm" style={{ color: '#8e909c' }}>
                 Original templates are locked. Selecting one creates an editable copy (exercise + sets only).
               </p>
-              {TEMPLATE_CATALOG.map((template) => {
+              {templates.map((template) => {
                 const selected = selectedTemplate?.id === template.id;
-                const focusColor = MUSCLE_FOCUS_COLOR[template.muscleFocus];
+                const focusColor = selected ? '#59d8de' : '#b1c5ff';
+                const durationWeeks = Number.parseInt(
+                  (template.durationWeeks ?? '8').split('–')[0] ?? '8',
+                  10,
+                );
+                const splitTypeValue =
+                  (template.splitStyle as SplitType) in SPLIT_LABELS
+                    ? (template.splitStyle as SplitType)
+                    : null;
                 return (
                   <div key={template.id} style={{ position: 'relative', backgroundColor: '#1e2026', border: selected ? '1px solid #59d8de' : '1px solid #3a3c44', borderLeft: `3px solid ${focusColor}`, borderRadius: '16px', overflow: 'hidden' }}>
                     <div style={{ display: 'flex', alignItems: 'start', justifyContent: 'space-between', gap: '8px', padding: '16px 16px 14px 18px' }}>
-                      <button type="button" onClick={() => { setSelectedTemplate(template); setFormData((prev) => ({ ...prev, templateId: template.id, totalWeeks: template.durationWeeks })); }} style={{ flex: 1, background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left', padding: 0 }}>
-                        <p style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 'clamp(1.1rem,4vw,1.3rem)', color: '#e2e2e8', fontWeight: 800, letterSpacing: '-0.035em' }}>{template.programName}</p>
+                      <button type="button" onClick={() => { setSelectedTemplate(template); setFormData((prev) => ({ ...prev, templateId: template.id, totalWeeks: Number.isNaN(durationWeeks) ? prev.totalWeeks : durationWeeks })); }} style={{ flex: 1, background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left', padding: 0 }}>
+                        <p style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 'clamp(1.1rem,4vw,1.3rem)', color: '#e2e2e8', fontWeight: 800, letterSpacing: '-0.035em' }}>{template.name}</p>
                         <p style={{ fontFamily: 'Manrope', fontSize: '0.75rem', color: '#8e909c' }}>
-                          {SPLIT_LABELS[template.splitType]} • {template.weeklyStructure.length} days/week • {template.durationWeeks} weeks
+                          {(splitTypeValue ? SPLIT_LABELS[splitTypeValue] : template.splitStyleLabel)} • {template.daysPerWeek} days/week • {template.durationWeeks} weeks
                         </p>
                         <p style={{ fontFamily: 'Manrope', fontSize: '0.7rem', color: '#8e909c', marginTop: '6px' }}>
-                          {template.tags.join(' · ')}
+                          {template.goal} · {template.level}
                         </p>
-                        {template.highIntensity && (
+                        {template.difficultyWarning && (
                           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '8px' }}>
                             <AlertTriangle size={12} color="#ffb4ab" />
                             <span style={{ fontFamily: 'Manrope', fontSize: '0.68rem', color: '#ffb4ab' }}>
-                              Not recommended for beginners · High recovery demand
+                              {template.difficultyWarning}
                             </span>
                           </div>
                         )}
                       </button>
-                      <button type="button" onClick={() => { setInfoTemplate(template); }} style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: '4px', flexShrink: 0 }}>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            const res = await templatesApi.findOne(template.id);
+                            setInfoTemplate({ ...template, detail: res.data as TemplateDetail });
+                          } catch (err) {
+                            if (err instanceof ApiError && err.status === 401) return;
+                            setInfoTemplate(template);
+                          }
+                        }}
+                        style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: '4px', flexShrink: 0 }}
+                      >
                         <Info size={16} color="#8e909c" />
                       </button>
                     </div>
                   </div>
                 );
               })}
-              {recommendations?.rationale && (
+              {recommendationRationale && (
                 <p style={{ fontFamily: 'Manrope', fontSize: '0.75rem', color: '#8e909c' }}>
-                  Recommendation insight: {recommendations.rationale}
+                  Recommendation insight: {recommendationRationale}
                 </p>
               )}
             </div>
@@ -462,22 +528,21 @@ export default function NewMesocyclePage() {
         <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(12,14,18,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px', zIndex: 50 }}>
           <div style={{ width: '100%', maxWidth: '430px', backgroundColor: '#1e2026', border: '1px solid #3a3c44', borderRadius: '16px', padding: '14px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-              <p style={{ fontFamily: "'Space Grotesk', sans-serif", color: '#e2e2e8', fontSize: '1rem', fontWeight: 700 }}>{infoTemplate.programName}</p>
+              <p style={{ fontFamily: "'Space Grotesk', sans-serif", color: '#e2e2e8', fontSize: '1rem', fontWeight: 700 }}>{infoTemplate.name}</p>
               <button type="button" onClick={() => setInfoTemplate(null)} style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}>
                 <X size={16} color="#8e909c" />
               </button>
             </div>
-            <p style={{ fontFamily: 'Manrope', color: '#8e909c', fontSize: '0.8rem', marginBottom: '8px' }}>{infoTemplate.overview}</p>
-            <p style={{ fontFamily: 'Manrope', color: '#e2e2e8', fontSize: '0.75rem' }}>Split: {SPLIT_LABELS[infoTemplate.splitType]}</p>
-            <p style={{ fontFamily: 'Manrope', color: '#e2e2e8', fontSize: '0.75rem' }}>Duration: {infoTemplate.durationWeeks} weeks</p>
-            <p style={{ fontFamily: 'Manrope', color: '#e2e2e8', fontSize: '0.75rem' }}>Muscle focus: {infoTemplate.muscleFocus}</p>
-            <p style={{ fontFamily: 'Manrope', color: '#e2e2e8', fontSize: '0.75rem', marginBottom: '6px' }}>
-              Deload: Week {infoTemplate.deloadWeek} uses reduced set count and lower intensity.
+            <p style={{ fontFamily: 'Manrope', color: '#8e909c', fontSize: '0.8rem', marginBottom: '8px' }}>
+              {infoTemplate.detail?.description ?? 'Program template from canonical API source.'}
             </p>
+            <p style={{ fontFamily: 'Manrope', color: '#e2e2e8', fontSize: '0.75rem' }}>Split: {infoTemplate.splitStyleLabel}</p>
+            <p style={{ fontFamily: 'Manrope', color: '#e2e2e8', fontSize: '0.75rem' }}>Duration: {infoTemplate.durationWeeks} weeks</p>
+            <p style={{ fontFamily: 'Manrope', color: '#e2e2e8', fontSize: '0.75rem' }}>Primary focus: {infoTemplate.primaryFocus}</p>
             <p className="label-sm" style={{ color: '#8e909c', marginBottom: '6px' }}>Weekly Structure</p>
-            {infoTemplate.weeklyStructure.map((day) => (
-              <p key={day.label} style={{ fontFamily: 'Manrope', color: '#8e909c', fontSize: '0.7rem', margin: '0 0 4px' }}>
-                {day.label}
+            {(infoTemplate.detail?.splitConfigs ?? []).flatMap((split) => split.days).map((day) => (
+              <p key={`${day.dayNumber}-${day.label}`} style={{ fontFamily: 'Manrope', color: '#8e909c', fontSize: '0.7rem', margin: '0 0 4px' }}>
+                {`Day ${day.dayNumber} - ${day.label}`}
               </p>
             ))}
           </div>

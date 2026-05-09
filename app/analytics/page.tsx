@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/auth.store';
-import api from '@/lib/api/client';
+import api, { ApiError } from '@/lib/api/client';
 import { TrendingUp, BarChart2, Zap } from 'lucide-react';
 
 export default function AnalyticsPage() {
@@ -34,6 +34,12 @@ export default function AnalyticsPage() {
       if (volumeRes.status === 'fulfilled') setWeeklyVolume(volumeRes.value.data);
       if (insightsRes.status === 'fulfilled') setInsights(insightsRes.value.data);
     } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        setStrengthTrends([]);
+        setWeeklyVolume([]);
+        setInsights(null);
+        return;
+      }
       console.error(err);
     } finally {
       setLoading(false);

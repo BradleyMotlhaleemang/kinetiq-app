@@ -24,101 +24,6 @@ const STATIC_MATRIX = [
   { label: 'Equipment',  value: 'Full Gym' },
 ];
 
-/**
- * @static Template data — TODO: replace with GET /templates
- * featured: true → renders as wide hero card with image panel
- */
-const STATIC_TEMPLATES = [
-  {
-    id: 'ul-4',
-    name: 'Upper / Lower',
-    tag: 'High Frequency',
-    badge: 'RECOMMENDED',
-    goal: 'Hypertrophy',
-    experience: 'Beginner',
-    durationWeeks: 8,
-    frequencyPerWeek: 4,
-    splitType: 'UL',
-    accentKey: 'primary',
-    description:
-      'Each muscle group trained twice per week. Heavy compound work drives strength; isolation finishes lock in the hypertrophy stimulus. Best overall ratio of effort-to-result for natural trainees.',
-    days: ['Upper A', 'Lower A', 'Upper B', 'Lower B'],
-    stats: [
-      { label: 'Sessions',  value: '4×/week'  },
-      { label: 'Duration',  value: '8 weeks'  },
-      { label: 'Focus',     value: 'Compounds' },
-      { label: 'Frequency', value: '×2 muscle' },
-    ],
-    featured: true,
-  },
-  {
-    id: 'ppl-3',
-    name: 'Push Pull Legs',
-    tag: 'Classic Split',
-    badge: null,
-    goal: 'Hypertrophy',
-    experience: 'Intermediate',
-    durationWeeks: 6,
-    frequencyPerWeek: 3,
-    splitType: 'PPL',
-    accentKey: 'secondary',
-    description:
-      'Full session dedication per movement plane. Lower frequency per muscle but high per-session volume. Great for focused hypertrophy blocks.',
-    days: ['Push', 'Pull', 'Legs'],
-    stats: [
-      { label: 'Sessions',  value: '3×/week'     },
-      { label: 'Duration',  value: '6 weeks'     },
-      { label: 'Focus',     value: 'Hypertrophy' },
-      { label: 'Frequency', value: '×1 muscle'   },
-    ],
-    featured: false,
-  },
-  {
-    id: 'ppl-6',
-    name: 'PPL 6-Day',
-    tag: 'High Volume',
-    badge: 'ADVANCED',
-    goal: 'Powerbuilding',
-    experience: 'Advanced',
-    durationWeeks: 8,
-    frequencyPerWeek: 6,
-    splitType: 'PPL',
-    accentKey: 'tertiary',
-    description:
-      'Two complete PPL rotations per week. Maximum stimulus for advanced trainees with the recovery capacity to match. Auto-deload fires at week 6.',
-    days: ['Push', 'Pull', 'Legs', 'Push', 'Pull', 'Legs'],
-    stats: [
-      { label: 'Sessions',  value: '6×/week'    },
-      { label: 'Duration',  value: '8 weeks'    },
-      { label: 'Focus',     value: 'Volume'     },
-      { label: 'Frequency', value: '×2 muscle'  },
-    ],
-    featured: false,
-  },
-  {
-    id: 'fullbody-3',
-    name: 'Full Body',
-    tag: 'Minimalist',
-    badge: null,
-    goal: 'Full Body',
-    experience: 'Beginner',
-    durationWeeks: 6,
-    frequencyPerWeek: 3,
-    splitType: 'FULL',
-    accentKey: 'primary',
-    description:
-      'Every session trains the entire body. High motor pattern frequency, low per-session volume. Perfect for beginners and time-constrained athletes.',
-    days: ['Full Body A', 'Full Body B', 'Full Body C'],
-    stats: [
-      { label: 'Sessions',  value: '3×/week'     },
-      { label: 'Duration',  value: '6 weeks'     },
-      { label: 'Focus',     value: 'Efficiency'  },
-      { label: 'Frequency', value: '×3 muscle'   },
-    ],
-    featured: false,
-  },
-];
-
 /** @static Modal phase breakdown — TODO: drive from template.phases API field */
 const STATIC_MODAL_PHASES = [
   { label: 'Phase 01 [W1–3]', title: 'Volume Accumulation', accent: false },
@@ -164,7 +69,22 @@ function rgb(hex: string) {
 
 const DAY_COLORS = [C.primary, C.tertiary, C.secondary, '#a2e7ff'];
 
-type Template = typeof STATIC_TEMPLATES[0];
+type Template = {
+  id: string;
+  name: string;
+  tag: string;
+  badge: string | null;
+  goal: string;
+  experience: string;
+  durationWeeks: number;
+  frequencyPerWeek: number;
+  splitType: string;
+  accentKey: 'primary' | 'secondary' | 'tertiary';
+  description: string;
+  days: string[];
+  stats: Array<{ label: string; value: string }>;
+  featured: boolean;
+};
 
 function mapApiTemplate(template: TemplateListItem): Template {
   const accentKey =

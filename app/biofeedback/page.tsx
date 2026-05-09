@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense } from 'react';
 import AppHeader from '@/components/AppHeader';
-import api from '@/lib/api/client';
+import api, { ApiError } from '@/lib/api/client';
 
 const MUSCLES = [
   'CHEST', 'BACK', 'QUADS', 'HAMSTRINGS', 'GLUTES',
@@ -209,6 +209,9 @@ function BiofeedbackForm() {
       });
       setSubmitted(true);
     } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        return;
+      }
       console.error(err);
     } finally {
       setLoading(false);

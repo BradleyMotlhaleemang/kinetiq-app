@@ -3,6 +3,18 @@ import { DEV_BYPASS_TOKEN } from '@/lib/auth/devBypass';
 /** API origin only - request paths must include `/api/v1/...` (Nest `setGlobalPrefix('api/v1')`). */
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 
+export class ApiError extends Error {
+  status: number;
+  data: unknown;
+
+  constructor(message: string, status: number, data: unknown) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.data = data;
+  }
+}
+
 function getToken() {
   if (typeof window !== 'undefined') {
     return sessionStorage.getItem('accessToken');
@@ -34,7 +46,13 @@ async function request(method: string, path: string, body?: any) {
   const data = await res.json().catch(() => ({}));
 
   if (!res.ok) {
-    throw { response: { data, status: res.status } };
+    const serverMessage =
+      (data as { message?: string | string[] } | null)?.message ?? null;
+    const normalizedMessage = Array.isArray(serverMessage)
+      ? serverMessage.join(', ')
+      : serverMessage;
+    const message = normalizedMessage || `Request failed with status ${res.status}`;
+    throw new ApiError(message, res.status, data);
   }
 
   return { data };
