@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import AppHeader from '@/components/AppHeader';
 import { mesocyclesApi } from '@/lib/api/mesocycles';
+import { ApiError } from '@/lib/api/client';
 import { TrendingUp, BarChart2, CheckCircle } from 'lucide-react';
 
 export default function MesocycleDetailPage() {
@@ -28,6 +29,9 @@ export default function MesocycleDetailPage() {
       if (mRes.status === 'fulfilled') setMesocycle(mRes.value.data);
       if (vRes.status === 'fulfilled') setVolumeStatus(vRes.value.data);
     } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        return;
+      }
       console.error(err);
     } finally {
       setLoading(false);
@@ -42,6 +46,9 @@ export default function MesocycleDetailPage() {
       console.log('Mesocycle closed successfully:', result);
       router.push('/mesocycles');
     } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        return;
+      }
       console.error('Failed to close mesocycle:', err);
       alert('Failed to close mesocycle');
     }

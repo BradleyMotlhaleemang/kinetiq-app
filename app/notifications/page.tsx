@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import AppHeader from '@/components/AppHeader';
 import { Bell, Check, ChevronRight } from 'lucide-react';
 import { notificationsApi } from '@/lib/api/notifications';
+import { ApiError } from '@/lib/api/client';
 import { useNotificationsStore } from '@/store/notifications.store';
 
 interface NotificationItem {
@@ -64,6 +65,11 @@ export default function NotificationsPage() {
       setNotifications(feed);
       setUnreadCount(feed.filter((notification) => !notification.isRead).length);
     } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        setNotifications([]);
+        setUnreadCount(0);
+        return;
+      }
       console.error(err);
     } finally {
       setLoading(false);
@@ -84,6 +90,9 @@ export default function NotificationsPage() {
 
       router.push(notification.redirectRoute ?? '/dashboard');
     } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        return;
+      }
       console.error(err);
     }
   }
@@ -96,6 +105,9 @@ export default function NotificationsPage() {
       );
       clearUnreadCount();
     } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        return;
+      }
       console.error(err);
     }
   }

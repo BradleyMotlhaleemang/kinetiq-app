@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { workoutsApi } from '@/lib/api/workouts';
 import { exercisesApi } from '@/lib/api/exercises';
+import { ApiError } from '@/lib/api/client';
 import { useSessionStore } from '@/store/session.store';
 import { Check, GripVertical, Plus, Search, Trash2, X, RotateCcw } from 'lucide-react';
 
@@ -501,6 +502,9 @@ export default function WorkoutPage() {
         return [{ ...current[0], exercises: list.slice(0, 4) }];
       });
     } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        return;
+      }
       console.error(err);
     }
   }
@@ -512,6 +516,9 @@ export default function WorkoutPage() {
       clearSession();
       router.push('/dashboard');
     } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        return;
+      }
       console.error(err);
     } finally {
       setCompleting(false);
@@ -566,6 +573,9 @@ export default function WorkoutPage() {
         ),
       }));
     } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        return;
+      }
       console.error(err);
     }
   }
