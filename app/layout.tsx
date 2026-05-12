@@ -2,7 +2,7 @@
 
 import './globals.css';
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useAuthStore } from '@/store/auth.store';
 import SplashScreen from '@/components/SplashScreen';
 import BottomNav from '@/components/navigation/BottomNav';
@@ -31,6 +31,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   const [showSplash, setShowSplash] = useState(true);
+  const handleSplashComplete = useCallback(() => setShowSplash(false), []);
 
   return (
     <html lang="en">
@@ -44,7 +45,7 @@ export default function RootLayout({
       >
         <StoreHydrator />
         {showSplash && (
-          <SplashScreen onComplete={() => setShowSplash(false)} />
+          <SplashScreen onComplete={handleSplashComplete} />
         )}
         {children}
         <BottomNav />

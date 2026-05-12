@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState, type CSSProperties } from 'react';
-import { useRouter } from 'next/navigation';
+import { Suspense, useEffect, useRef, useState, type CSSProperties } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import AppHeader from '@/components/AppHeader';
 import { mesocyclesApi } from '@/lib/api/mesocycles';
 import { ApiError } from '@/lib/api/client';
@@ -64,7 +64,25 @@ const DEFAULT_SPLIT_DAYS: Record<SplitType, string[]> = {
 };
 
 export default function NewMesocyclePage() {
+  return (
+    <Suspense fallback={<NewMesocycleLoadingState />}>
+      <MesocyclesNewInner />
+    </Suspense>
+  );
+}
+
+function parseTemplateDurationWeeks(template: TemplateCard): number {
+  const raw = template.durationWeeks as string | number | undefined;
+  const str = raw === undefined || raw === null ? '8' : String(raw);
+  const first = str.split(/[–-]/)[0]?.trim() ?? str;
+  const n = Number.parseInt(first, 10);
+  return Number.isNaN(n) ? 8 : n;
+}
+
+function MesocyclesNewInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const urlTemplateIdParam = searchParams.get('templateId');
   const [loading, setLoading] = useState(false);
   const [buildMode, setBuildMode] = useState<BuildMode>('USE_TEMPLATE');
   const [selectedTemplate, setSelectedTemplate] = useState<TemplateCard | null>(null);
@@ -85,6 +103,19 @@ export default function NewMesocyclePage() {
   const [categoryFilter, setCategoryFilter] = useState('ALL');
   const [exerciseQuery, setExerciseQuery] = useState('');
   const [allExercises, setAllExercises] = useState<Array<{ id: string; name: string; primaryMuscle?: string }>>([]);
+  const [urlPreselectedTemplateId, setUrlPreselectedTemplateId] = useState<string | null>(null);
+  const selectedTemplateCardRef = useRef<HTMLDivElement | null>(null);
+
+  function applyTemplateSelection(template: TemplateCard) {
+    const durationWeeks = parseTemplateDurationWeeks(template);
+    setSelectedTemplate(template);
+    setFormData((prev) => ({
+      ...prev,
+      templateId: template.id,
+      totalWeeks: Number.isNaN(durationWeeks) ? prev.totalWeeks : durationWeeks,
+    }));
+    setBuildMode('USE_TEMPLATE');
+  }
 
   useEffect(() => {
     loadRecommendations();
@@ -105,17 +136,12 @@ export default function NewMesocyclePage() {
         null) as TemplateDetail | null;
       const rationale = (recommendedRes.data?.rationale ?? null) as string | null;
       setRecommendationRationale(rationale);
-      if (recommendedTemplate) {
-        setSelectedTemplate(recommendedTemplate);
-        const weeks = Number.parseInt(
-          (recommendedTemplate.durationWeeks ?? '8').split('–')[0] ?? '8',
-          10,
-        );
-        setFormData((current) => ({
-          ...current,
-          templateId: recommendedTemplate.id,
-          totalWeeks: Number.isNaN(weeks) ? current.totalWeeks : weeks,
-        }));
+      const urlTemplateIdAfterFetch =
+        typeof window !== 'undefined'
+          ? new URL(window.location.href).searchParams.get('templateId')
+          : urlTemplateIdParam;
+      if (!urlTemplateIdAfterFetch && recommendedTemplate) {
+        applyTemplateSelection(recommendedTemplate);
       }
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
@@ -125,6 +151,28 @@ export default function NewMesocyclePage() {
       console.error('Failed to load recommendations:', errorMsg);
     }
   }
+
+  useEffect(() => {
+    if (!urlTemplateIdParam || templates.length === 0) return;
+    const match = templates.find((t) => t.id === urlTemplateIdParam);
+    if (!match) return;
+    const durationWeeks = parseTemplateDurationWeeks(match);
+    setSelectedTemplate(match);
+    setFormData((prev) => ({
+      ...prev,
+      name: match.name || prev.name,
+      templateId: match.id,
+      totalWeeks: Number.isNaN(durationWeeks) ? prev.totalWeeks : durationWeeks,
+    }));
+    setBuildMode('USE_TEMPLATE');
+    setUrlPreselectedTemplateId(match.id);
+  }, [urlTemplateIdParam, templates]);
+
+  useEffect(() => {
+    if (!urlPreselectedTemplateId || selectedTemplate?.id !== urlPreselectedTemplateId) return;
+    selectedTemplateCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [selectedTemplate?.id, urlPreselectedTemplateId]);
+
   async function loadExercises() {
     try {
       const res = await exercisesApi.findAll();
@@ -191,6 +239,8 @@ export default function NewMesocyclePage() {
       setLoading(false);
     }
   }
+
+  const showSubmitButton = !!selectedTemplate;
 
   return (
     <div style={{ minHeight: '100dvh', backgroundColor: '#111318', paddingBottom: '96px' }}>
@@ -295,18 +345,26 @@ export default function NewMesocyclePage() {
               {templates.map((template) => {
                 const selected = selectedTemplate?.id === template.id;
                 const focusColor = selected ? '#59d8de' : '#b1c5ff';
-                const durationWeeks = Number.parseInt(
-                  (template.durationWeeks ?? '8').split('–')[0] ?? '8',
-                  10,
-                );
                 const splitTypeValue =
                   (template.splitStyle as SplitType) in SPLIT_LABELS
                     ? (template.splitStyle as SplitType)
                     : null;
                 return (
-                  <div key={template.id} style={{ position: 'relative', backgroundColor: '#1e2026', border: selected ? '1px solid #59d8de' : '1px solid #3a3c44', borderLeft: `3px solid ${focusColor}`, borderRadius: '16px', overflow: 'hidden' }}>
+                  <div
+                    key={template.id}
+                    ref={selected ? selectedTemplateCardRef : null}
+                    style={{
+                      position: 'relative',
+                      backgroundColor: '#1e2026',
+                      border: selected ? '1.5px solid var(--primary)' : '1px solid #3a3c44',
+                      borderLeft: `3px solid ${focusColor}`,
+                      borderRadius: '16px',
+                      overflow: 'hidden',
+                      boxShadow: 'none',
+                    }}
+                  >
                     <div style={{ display: 'flex', alignItems: 'start', justifyContent: 'space-between', gap: '8px', padding: '16px 16px 14px 18px' }}>
-                      <button type="button" onClick={() => { setSelectedTemplate(template); setFormData((prev) => ({ ...prev, templateId: template.id, totalWeeks: Number.isNaN(durationWeeks) ? prev.totalWeeks : durationWeeks })); }} style={{ flex: 1, background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left', padding: 0 }}>
+                      <button type="button" onClick={() => applyTemplateSelection(template)} style={{ flex: 1, background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left', padding: 0 }}>
                         <p style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 'clamp(1.1rem,4vw,1.3rem)', color: '#e2e2e8', fontWeight: 800, letterSpacing: '-0.035em' }}>{template.name}</p>
                         <p style={{ fontFamily: 'Manrope', fontSize: '0.75rem', color: '#8e909c' }}>
                           {(splitTypeValue ? SPLIT_LABELS[splitTypeValue] : template.splitStyleLabel)} • {template.daysPerWeek} days/week • {template.durationWeeks} weeks
@@ -452,26 +510,30 @@ export default function NewMesocyclePage() {
             </div>
           )}
 
-          {/* Submit Button */}
-          <button
-            type="submit"
-            disabled={loading || !formData.name.trim()}
-            style={{
-              width: '100%',
-              padding: '15px 0',
-              background: loading ? '#444650' : primaryGradient,
-              border: 'none',
-              borderRadius: '14px',
-              color: loading ? '#8e909c' : '#05080f',
-              fontFamily: "'Space Grotesk', sans-serif",
-              fontSize: '15px',
-              fontWeight: 900,
-              cursor: loading ? 'not-allowed' : 'pointer',
-              marginTop: '16px',
-            }}
-          >
-            {loading ? 'Creating...' : 'Create Block'}
-          </button>
+          {/* Submit */}
+          {showSubmitButton && (
+            <div>
+              <button
+                type="submit"
+                disabled={loading || !formData.name.trim()}
+                style={{
+                  width: '100%',
+                  padding: '15px 0',
+                  background: loading ? '#444650' : primaryGradient,
+                  border: 'none',
+                  borderRadius: '14px',
+                  color: loading ? '#8e909c' : '#05080f',
+                  fontFamily: "'Space Grotesk', sans-serif",
+                  fontSize: '15px',
+                  fontWeight: 900,
+                  cursor: loading ? 'not-allowed' : 'pointer',
+                  marginTop: '16px',
+                }}
+              >
+                {loading ? 'Creating...' : 'Create Block'}
+              </button>
+            </div>
+          )}
         </form>
       </div>
 
@@ -548,6 +610,19 @@ export default function NewMesocyclePage() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function NewMesocycleLoadingState() {
+  return (
+    <div style={{ minHeight: '100dvh', backgroundColor: '#111318', paddingBottom: '96px' }}>
+      <AppHeader title="Create Block" showBack backHref="/mesocycles" />
+      <div style={{ maxWidth: '480px', margin: '0 auto', padding: '20px' }}>
+        <p style={{ fontFamily: 'Manrope, sans-serif', fontSize: '0.875rem', color: '#8e909c' }}>
+          Loading...
+        </p>
+      </div>
     </div>
   );
 }

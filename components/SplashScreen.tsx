@@ -1,19 +1,21 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 type SplashPhase = 'logo' | 'text' | 'init' | 'done';
 
 export default function SplashScreen({ onComplete }: { onComplete: () => void }) {
   const [phase, setPhase] = useState<SplashPhase>('logo');
+  const onCompleteRef = useRef(onComplete);
+  onCompleteRef.current = onComplete;
 
   useEffect(() => {
     const t1 = setTimeout(() => setPhase('text'), 600);
     const t2 = setTimeout(() => setPhase('init'), 1200);
     const t3 = setTimeout(() => setPhase('done'), 2400);
-    const t4 = setTimeout(() => onComplete(), 2800);
+    const t4 = setTimeout(() => onCompleteRef.current(), 2800);
     return () => [t1, t2, t3, t4].forEach(clearTimeout);
-  }, [onComplete]);
+  }, []);
 
   if (phase === 'done') return null;
 

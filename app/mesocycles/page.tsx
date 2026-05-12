@@ -6,7 +6,7 @@ import AppHeader from '@/components/AppHeader';
 import { mesocyclesApi } from '@/lib/api/mesocycles';
 import { ApiError } from '@/lib/api/client';
 import { templatesApi, type TemplateListItem } from '@/lib/api/templates';
-import { Plus, ChevronRight, CheckCircle, Clock, Zap } from 'lucide-react';
+import { Plus, Zap } from 'lucide-react';
 
 const C = {
   surface: '#111318',
@@ -22,31 +22,36 @@ const C = {
   tertiary: '#59d8de',
 };
 
-const STATUS_CONFIG: Record<string, { label: string; color: string; icon: any }> = {
-  ACTIVE: { label: 'Active', color: '#59d8de', icon: Zap },
-  COMPLETED: { label: 'Completed', color: '#444650', icon: CheckCircle },
-  DELOAD_TRIGGERED: { label: 'Deload', color: '#a2e7ff', icon: Clock },
-  DELOAD_ACTIVE: { label: 'Deloading', color: '#a2e7ff', icon: Clock },
+const ACCENT: Record<'primary' | 'secondary' | 'tertiary', string> = {
+  primary: C.primary,
+  secondary: C.secondary,
+  tertiary: C.tertiary,
 };
 
-const SPLIT_TYPE_LABELS: Record<string, string> = {
-  PPL: 'Push Pull Legs',
-  UPPER_LOWER: 'Upper / Lower',
-  FULL_BODY: 'Full Body',
-  POWERLIFTING: 'Powerlifting',
-  POWERBUILDING: 'Powerbuilding',
-  GLUTE_FOCUS: 'Glute Focus',
-  QUAD_FOCUS: 'Quadzilla',
-  CHEST_FOCUS: 'Chest Focus',
-  SHOULDER_FOCUS: 'Shoulder Focus',
-};
+const DAY_COLORS = [C.primary, C.tertiary, C.secondary, '#a2e7ff'];
 
 const TEMPLATE_ACCENT_COLORS = ['#59d8de', '#b1c5ff', '#d4bbff', '#a2e7ff'];
+
+type MesocycleWorkout = {
+  weekNumber?: number;
+  dayNumber?: number;
+  splitDayLabel?: string;
+};
+
+type MesocycleSummary = {
+  id: string;
+  name?: string;
+  status?: string;
+  currentWeek?: number;
+  totalWeeks?: number;
+  startDate?: string;
+  workouts?: MesocycleWorkout[];
+};
 
 export default function MesocyclesPage() {
   const router = useRouter();
   const pathname = usePathname();
-  const [mesocycles, setMesocycles] = useState<any[]>([]);
+  const [mesocycles, setMesocycles] = useState<MesocycleSummary[]>([]);
   const [templates, setTemplates] = useState<TemplateListItem[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -59,7 +64,7 @@ export default function MesocyclesPage() {
       console.log('Loading mesocycles...');
       const res = await mesocyclesApi.all();
       // Ensure we always set an array
-      const data = Array.isArray(res.data) ? res.data : [];
+      const data = Array.isArray(res.data) ? (res.data as MesocycleSummary[]) : [];
       console.log('Loaded mesocycles:', data);
       setMesocycles(data);
       const templateRes = await templatesApi.all();
@@ -134,11 +139,77 @@ export default function MesocyclesPage() {
                 </p>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   {active.map((m) => (
-                    <MesocycleCard
+                    <div
                       key={m.id}
-                      mesocycle={m}
+                      role="button"
+                      tabIndex={0}
                       onClick={() => router.push(`/mesocycles/${m.id}`)}
-                    />
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          router.push(`/mesocycles/${m.id}`);
+                        }
+                      }}
+                      style={{
+                        cursor: 'pointer',
+                        background: C.surfaceContainer,
+                        border: `1px solid ${C.outlineVariant}`,
+                        borderLeft: `3px solid ${ACCENT[accentKeyFromStatus(m.status)]}`,
+                        borderRadius: 16,
+                        transition: 'box-shadow 0.3s ease',
+                      }}
+                    >
+                      <div style={{ padding: '16px 16px 14px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 5, flexWrap: 'wrap' }}>
+                              <span style={{ fontSize: '0.57rem', letterSpacing: '0.2em', textTransform: 'uppercase', color: ACCENT[accentKeyFromStatus(m.status)], fontWeight: 700 }}>
+                                {m.status ?? 'UNKNOWN'}
+                              </span>
+                              {(m.status ?? '') === 'ACTIVE' && (
+                                <span style={{ fontSize: '0.5rem', letterSpacing: '0.15em', textTransform: 'uppercase', color: C.onSurface, background: C.surfaceHigh, padding: '2px 7px', borderRadius: 100, fontWeight: 700 }}>
+                                  Active
+                                </span>
+                              )}
+                            </div>
+                            <h3 style={{ fontFamily: 'Space Grotesk,sans-serif', fontWeight: 800, fontSize: 'clamp(1.1rem,4vw,1.3rem)', letterSpacing: '-0.035em', color: C.onSurface, margin: 0, lineHeight: 1.15 }}>
+                              {m.name ?? 'Untitled Mesocycle'}
+                            </h3>
+                          </div>
+                          <div style={{ width: 30, height: 30, borderRadius: 8, background: C.surfaceHigh, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginLeft: 10, transition: 'background 0.2s', pointerEvents: 'none' }}>
+                            <svg width="13" height="13" viewBox="0 0 13 13" fill="none" style={{ transform: 'rotate(-90deg)' }}>
+                              <path d="M2 4.5L6.5 9L11 4.5" stroke={C.outline} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'flex', gap: 7, marginTop: 12, flexWrap: 'wrap' }}>
+                          <div style={{ background: C.surfaceHigh, borderRadius: 7, padding: '5px 9px' }}>
+                            <span style={{ display: 'block', fontSize: '0.5rem', letterSpacing: '0.16em', textTransform: 'uppercase', color: C.outline, fontWeight: 700 }}>Duration</span>
+                            <span style={{ display: 'block', fontSize: 11, fontWeight: 800, color: C.onSurfaceVariant, marginTop: 2 }}>{`${m.totalWeeks ?? 0} weeks`}</span>
+                          </div>
+                          <div style={{ background: C.surfaceHigh, borderRadius: 7, padding: '5px 9px' }}>
+                            <span style={{ display: 'block', fontSize: '0.5rem', letterSpacing: '0.16em', textTransform: 'uppercase', color: C.outline, fontWeight: 700 }}>Progress</span>
+                            <span style={{ display: 'block', fontSize: 11, fontWeight: 800, color: C.onSurfaceVariant, marginTop: 2 }}>{`Week ${m.currentWeek ?? 0} of ${m.totalWeeks ?? 0}`}</span>
+                          </div>
+                          <div style={{ background: C.surfaceHigh, borderRadius: 7, padding: '5px 9px' }}>
+                            <span style={{ display: 'block', fontSize: '0.5rem', letterSpacing: '0.16em', textTransform: 'uppercase', color: C.outline, fontWeight: 700 }}>Started</span>
+                            <span style={{ display: 'block', fontSize: 11, fontWeight: 800, color: C.onSurfaceVariant, marginTop: 2 }}>{formatReadableDate(m.startDate)}</span>
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'flex', gap: 5, marginTop: 10, flexWrap: 'wrap' }}>
+                          {deriveWeekOneDays(m).map((day, index) => {
+                            const color = DAY_COLORS[index % DAY_COLORS.length]!;
+                            return (
+                              <span key={`${m.id}-${day}-${index}`} style={{ fontSize: 10, fontWeight: 700, color, background: `rgba(${rgb(color)},0.1)`, borderRadius: 5, padding: '3px 8px' }}>
+                                {day}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
                   ))}
                 </div>
               </section>
@@ -151,11 +222,77 @@ export default function MesocyclesPage() {
                 </p>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   {past.map((m) => (
-                    <MesocycleCard
+                    <div
                       key={m.id}
-                      mesocycle={m}
+                      role="button"
+                      tabIndex={0}
                       onClick={() => router.push(`/mesocycles/${m.id}`)}
-                    />
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          router.push(`/mesocycles/${m.id}`);
+                        }
+                      }}
+                      style={{
+                        cursor: 'pointer',
+                        background: C.surfaceContainer,
+                        border: `1px solid ${C.outlineVariant}`,
+                        borderLeft: `3px solid ${ACCENT[accentKeyFromStatus(m.status)]}`,
+                        borderRadius: 16,
+                        transition: 'box-shadow 0.3s ease',
+                      }}
+                    >
+                      <div style={{ padding: '16px 16px 14px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 5, flexWrap: 'wrap' }}>
+                              <span style={{ fontSize: '0.57rem', letterSpacing: '0.2em', textTransform: 'uppercase', color: ACCENT[accentKeyFromStatus(m.status)], fontWeight: 700 }}>
+                                {m.status ?? 'UNKNOWN'}
+                              </span>
+                              {(m.status ?? '') === 'ACTIVE' && (
+                                <span style={{ fontSize: '0.5rem', letterSpacing: '0.15em', textTransform: 'uppercase', color: C.onSurface, background: C.surfaceHigh, padding: '2px 7px', borderRadius: 100, fontWeight: 700 }}>
+                                  Active
+                                </span>
+                              )}
+                            </div>
+                            <h3 style={{ fontFamily: 'Space Grotesk,sans-serif', fontWeight: 800, fontSize: 'clamp(1.1rem,4vw,1.3rem)', letterSpacing: '-0.035em', color: C.onSurface, margin: 0, lineHeight: 1.15 }}>
+                              {m.name ?? 'Untitled Mesocycle'}
+                            </h3>
+                          </div>
+                          <div style={{ width: 30, height: 30, borderRadius: 8, background: C.surfaceHigh, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginLeft: 10, transition: 'background 0.2s', pointerEvents: 'none' }}>
+                            <svg width="13" height="13" viewBox="0 0 13 13" fill="none" style={{ transform: 'rotate(-90deg)' }}>
+                              <path d="M2 4.5L6.5 9L11 4.5" stroke={C.outline} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'flex', gap: 7, marginTop: 12, flexWrap: 'wrap' }}>
+                          <div style={{ background: C.surfaceHigh, borderRadius: 7, padding: '5px 9px' }}>
+                            <span style={{ display: 'block', fontSize: '0.5rem', letterSpacing: '0.16em', textTransform: 'uppercase', color: C.outline, fontWeight: 700 }}>Duration</span>
+                            <span style={{ display: 'block', fontSize: 11, fontWeight: 800, color: C.onSurfaceVariant, marginTop: 2 }}>{`${m.totalWeeks ?? 0} weeks`}</span>
+                          </div>
+                          <div style={{ background: C.surfaceHigh, borderRadius: 7, padding: '5px 9px' }}>
+                            <span style={{ display: 'block', fontSize: '0.5rem', letterSpacing: '0.16em', textTransform: 'uppercase', color: C.outline, fontWeight: 700 }}>Progress</span>
+                            <span style={{ display: 'block', fontSize: 11, fontWeight: 800, color: C.onSurfaceVariant, marginTop: 2 }}>{`Week ${m.currentWeek ?? 0} of ${m.totalWeeks ?? 0}`}</span>
+                          </div>
+                          <div style={{ background: C.surfaceHigh, borderRadius: 7, padding: '5px 9px' }}>
+                            <span style={{ display: 'block', fontSize: '0.5rem', letterSpacing: '0.16em', textTransform: 'uppercase', color: C.outline, fontWeight: 700 }}>Started</span>
+                            <span style={{ display: 'block', fontSize: 11, fontWeight: 800, color: C.onSurfaceVariant, marginTop: 2 }}>{formatReadableDate(m.startDate)}</span>
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'flex', gap: 5, marginTop: 10, flexWrap: 'wrap' }}>
+                          {deriveWeekOneDays(m).map((day, index) => {
+                            const color = DAY_COLORS[index % DAY_COLORS.length]!;
+                            return (
+                              <span key={`${m.id}-${day}-${index}`} style={{ fontSize: 10, fontWeight: 700, color, background: `rgba(${rgb(color)},0.1)`, borderRadius: 5, padding: '3px 8px' }}>
+                                {day}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
                   ))}
                 </div>
               </section>
@@ -186,122 +323,34 @@ export default function MesocyclesPage() {
   );
 }
 
-function MesocycleCard({ mesocycle, onClick }: { mesocycle: any; onClick: () => void }) {
-  const status = STATUS_CONFIG[mesocycle.status] ?? STATUS_CONFIG.ACTIVE;
-  const StatusIcon = status.icon;
-  const sideStripColor =
-    mesocycle.status === 'ACTIVE'
-      ? C.tertiary
-      : mesocycle.status === 'COMPLETED'
-        ? C.secondary
-        : C.primary;
+function accentKeyFromStatus(status: string | undefined): 'primary' | 'secondary' | 'tertiary' {
+  if (status === 'ACTIVE') return 'primary';
+  if (status === 'COMPLETED') return 'secondary';
+  return 'tertiary';
+}
 
-  const progressPct = mesocycle.totalWeeks > 0
-    ? Math.round((mesocycle.currentWeek / mesocycle.totalWeeks) * 100)
-    : 0;
+function deriveWeekOneDays(mesocycle: MesocycleSummary): string[] {
+  const workouts = Array.isArray(mesocycle.workouts) ? mesocycle.workouts : [];
+  // TODO: `/api/v1/mesocycles/all` may omit nested `workouts`; use empty days when unavailable.
+  if (workouts.length === 0) return [];
+  return [...workouts]
+    .filter((workout) => (workout.weekNumber ?? 1) === 1)
+    .sort((a, b) => (a.dayNumber ?? 0) - (b.dayNumber ?? 0))
+    .map((workout) => workout.splitDayLabel)
+    .filter((label): label is string => typeof label === 'string' && label.length > 0)
+    .filter((label, index, list) => list.indexOf(label) === index);
+}
 
-  const createdDate = new Date(mesocycle.createdAt).toLocaleDateString('en-US', {
-    month: 'short', day: 'numeric', year: 'numeric',
-  });
+function formatReadableDate(value: string | undefined): string {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '-';
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
 
-  return (
-    <button
-      onClick={onClick}
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '12px',
-        padding: '16px 16px 16px 18px',
-        backgroundColor: C.surfaceContainer,
-        borderRadius: '14px',
-        border: `1px solid ${C.outlineVariant}`,
-        cursor: 'pointer',
-        width: '100%',
-        textAlign: 'left',
-        borderLeft: `5px solid ${sideStripColor}`,
-        boxShadow: `0 0 18px -12px ${sideStripColor}`,
-      }}
-    >
-      {/* Top row */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-        <div style={{ flex: 1 }}>
-          <p style={{
-            fontFamily: "'Space Grotesk', sans-serif",
-            fontSize: '1rem', fontWeight: 600,
-            letterSpacing: '-0.02em', color: C.onSurface,
-            margin: '0 0 4px',
-          }}>
-            {mesocycle.name}
-          </p>
-          <p style={{
-            fontFamily: 'Manrope', fontSize: '0.75rem', color: C.outline,
-          }}>
-            {createdDate}
-          </p>
-        </div>
-        <ChevronRight size={16} color={C.outline} style={{ flexShrink: 0, marginTop: '2px' }} />
-      </div>
-
-      {/* Meta row */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: '4px',
-          padding: '4px 10px', borderRadius: '9999px',
-          backgroundColor: `${status.color}22`,
-        }}>
-          <StatusIcon size={10} color={status.color} />
-          <span style={{
-            fontFamily: 'Manrope', fontSize: '0.625rem',
-            fontWeight: 700, letterSpacing: '0.08em',
-            textTransform: 'uppercase', color: status.color,
-          }}>
-            {mesocycle.statusLabel ?? status.label}
-          </span>
-        </div>
-
-        <span style={{
-          fontFamily: 'Manrope', fontSize: '0.75rem', color: C.onSurfaceVariant,
-        }}>
-          Week {mesocycle.currentWeek} of {mesocycle.totalWeeks}
-        </span>
-
-        {mesocycle.templateSplitType && (
-          <span style={{
-            fontFamily: 'Manrope', fontSize: '0.75rem', color: C.outline,
-          }}>
-            {SPLIT_TYPE_LABELS[mesocycle.templateSplitType] ?? mesocycle.templateSplitType}
-          </span>
-        )}
-      </div>
-
-      {/* Progress bar — only for active */}
-      {mesocycle.status === 'ACTIVE' && (
-        <div style={{ width: '100%' }}>
-          <div style={{
-            height: '2px',
-            backgroundColor: C.surfaceHigh,
-            borderRadius: '9999px',
-            overflow: 'hidden',
-          }}>
-            <div style={{
-              height: '100%',
-              width: `${progressPct}%`,
-              background: `linear-gradient(90deg, ${C.primary}, ${C.tertiary})`,
-              borderRadius: '9999px',
-              transition: 'width 0.3s ease',
-            }} />
-          </div>
-          <p style={{
-            fontFamily: 'Manrope', fontSize: '0.625rem',
-            color: C.outline, marginTop: '4px',
-            textAlign: 'right', letterSpacing: '0.05em',
-          }}>
-            {progressPct}% complete
-          </p>
-        </div>
-      )}
-    </button>
-  );
+function rgb(hex: string): string {
+  const parsed = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  return parsed ? `${parseInt(parsed[1], 16)},${parseInt(parsed[2], 16)},${parseInt(parsed[3], 16)}` : '177,197,255';
 }
 
 function EmptyState({ onCreate }: { onCreate: () => void }) {
