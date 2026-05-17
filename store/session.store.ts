@@ -1,4 +1,7 @@
 import { create } from 'zustand';
+import type { Prescription } from '@/lib/api/workouts';
+
+export type { Prescription };
 
 interface SetLog {
   id: string;
@@ -10,44 +13,27 @@ interface SetLog {
   e1rm?: number;
 }
 
-interface Prescription {
-  exerciseId: string;
-  action: string;
-  actionLabel: string;
-  weightTarget: number;
-  sessionMode: string;
-  sessionModeLabel: string;
-  sessionModeColor: string;
-  reason: string;
-}
-
 interface SessionState {
-  currentWorkoutId: string | null;
-  currentExerciseIndex: number;
-  sessionMode: string | null;
-  sessionModeLabel: string | null;
   sets: Record<string, SetLog[]>;
   prescriptions: Record<string, Prescription>;
-  setWorkout: (workoutId: string) => void;
-  setSessionMode: (mode: string, label: string) => void;
+
+  // Used in app/workout/[id]/page.tsx (handleSetComplete) to append a logged set
+  // to the in-memory session after a successful POST /workouts/:id/sets.
   addSet: (exerciseId: string, set: SetLog) => void;
+
+  // Used in app/workout/[id]/page.tsx (fetchPrescriptionForExercise) to cache
+  // the engine's per-exercise prescription returned by
+  // GET /workouts/:id/prescription.
   setPrescription: (exerciseId: string, prescription: Prescription) => void;
-  nextExercise: () => void;
+
+  // Used in app/workout/[id]/page.tsx (completeSession) to reset the session
+  // state before navigating away after a workout is finished.
   clearSession: () => void;
 }
 
-export const useSessionStore = create<SessionState>((set, get) => ({
-  currentWorkoutId: null,
-  currentExerciseIndex: 0,
-  sessionMode: null,
-  sessionModeLabel: null,
+export const useSessionStore = create<SessionState>((set) => ({
   sets: {},
   prescriptions: {},
-
-  setWorkout: (workoutId) => set({ currentWorkoutId: workoutId }),
-
-  setSessionMode: (mode, label) =>
-    set({ sessionMode: mode, sessionModeLabel: label }),
 
   addSet: (exerciseId, newSet) =>
     set((state) => ({
@@ -62,17 +48,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       prescriptions: { ...state.prescriptions, [exerciseId]: prescription },
     })),
 
-  nextExercise: () =>
-    set((state) => ({
-      currentExerciseIndex: state.currentExerciseIndex + 1,
-    })),
-
   clearSession: () =>
     set({
-      currentWorkoutId: null,
-      currentExerciseIndex: 0,
-      sessionMode: null,
-      sessionModeLabel: null,
       sets: {},
       prescriptions: {},
     }),

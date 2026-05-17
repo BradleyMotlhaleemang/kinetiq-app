@@ -1,8 +1,12 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { workoutsApi } from '@/lib/api/workouts';
+import {
+  workoutsApi,
+  type Prescription,
+  type PrescriptionSubstitution,
+} from '@/lib/api/workouts';
 import { exercisesApi } from '@/lib/api/exercises';
 import { ApiError } from '@/lib/api/client';
 import { useSessionStore } from '@/store/session.store';
@@ -24,17 +28,6 @@ type SetRow = {
   completed: boolean;
 };
 
-type ExercisePrescription = {
-  exerciseId: string;
-  action: string;
-  actionLabel: string;
-  weightTarget: number;
-  sessionMode: string;
-  sessionModeLabel: string;
-  sessionModeColor: string;
-  reason: string;
-};
-
 const EMPTY_EXERCISES: ExerciseItem[] = [];
 
 // ─── Brand color palette (Kinetiq) ───────────────────────────────────────────
@@ -48,6 +41,32 @@ const SURFACE_HIGH = '#282a30';
 const OUTLINE = '#8e909c';
 const ON_SURFACE = '#e2e2e8';
 const ERROR = '#ffb4ab';
+const WARNING = '#f5d76e';
+const CONFIDENCE_HIGH = '#6cd68f';
+const CONFIDENCE_MOD = '#f5d76e';
+const CONFIDENCE_LOW = '#ff6b6b';
+
+const confidenceColor = (level: string | null | undefined): string => {
+  switch ((level ?? '').toUpperCase()) {
+    case 'HIGH':
+      return CONFIDENCE_HIGH;
+    case 'MODERATE':
+      return CONFIDENCE_MOD;
+    case 'LOW':
+    case 'VERY_LOW':
+      return CONFIDENCE_LOW;
+    case 'INSUFFICIENT_DATA':
+      return OUTLINE;
+    default:
+      return OUTLINE;
+  }
+};
+
+const confidenceLabel = (level: string | null | undefined): string =>
+  (level ?? 'INSUFFICIENT_DATA').replace(/_/g, ' ').toLowerCase();
+
+const formatRepRange = (low: number, high: number): string =>
+  low === high ? `${low}` : `${low}–${high}`;
 
 // muscle → accent color map (Kinetiq palette only — no random purples/oranges)
 const muscleColor = (muscle: string | null | undefined): string => {
@@ -65,34 +84,66 @@ const muscleColor = (muscle: string | null | undefined): string => {
 
 // ─── Sub-component: Set Row ───────────────────────────────────────────────────
 
+const SET_ROW_GRID = '26px 1fr 1fr 1fr 1fr 40px';
+const SET_ROW_GAP = '6px';
+
 function SetRowItem({
   row,
   rowIndex,
-  exerciseId,
   accentColor,
+  prescribedWeight,
+  prescribedReps,
   onWeightChange,
   onRepsChange,
   onComplete,
 }: {
   row: SetRow;
   rowIndex: number;
-  exerciseId: string;
   accentColor: string;
+  prescribedWeight: string;
+  prescribedReps: string;
   onWeightChange: (val: string) => void;
   onRepsChange: (val: string) => void;
   onComplete: () => void;
 }) {
   const isCompleted = row.completed;
+  const mutedCellStyle: React.CSSProperties = {
+    backgroundColor: 'transparent',
+    border: `1px dashed ${SURFACE_HIGH}`,
+    borderRadius: '10px',
+    padding: '10px 0',
+    textAlign: 'center',
+    color: OUTLINE,
+    fontFamily: 'Manrope, sans-serif',
+    fontWeight: 600,
+    fontSize: '0.78rem',
+    opacity: 0.85,
+  };
+  const inputStyle: React.CSSProperties = {
+    backgroundColor: isCompleted ? `${accentColor}18` : SURFACE,
+    border: `1px solid ${isCompleted ? accentColor + '55' : SURFACE_HIGH}`,
+    borderRadius: '12px',
+    padding: '10px 0',
+    textAlign: 'center',
+    color: isCompleted ? accentColor : ON_SURFACE,
+    fontFamily: 'Manrope, sans-serif',
+    fontWeight: 700,
+    fontSize: '0.84rem',
+    outline: 'none',
+    width: '100%',
+    transition: 'all 0.2s',
+    appearance: 'textfield',
+  };
 
   return (
     <div
       style={{
         display: 'grid',
-        gridTemplateColumns: '32px 1fr 1fr 44px',
-        gap: '8px',
+        gridTemplateColumns: SET_ROW_GRID,
+        gap: SET_ROW_GAP,
         alignItems: 'center',
         padding: '2px 0',
-        opacity: isCompleted ? 0.7 : 1,
+        opacity: isCompleted ? 0.75 : 1,
         transition: 'opacity 0.2s',
       }}
     >
@@ -100,7 +151,7 @@ function SetRowItem({
       <span
         style={{
           fontFamily: 'Manrope, sans-serif',
-          fontSize: '0.68rem',
+          fontSize: '0.66rem',
           fontWeight: 700,
           color: isCompleted ? accentColor : OUTLINE,
           letterSpacing: '0.06em',
@@ -110,52 +161,30 @@ function SetRowItem({
         S{rowIndex + 1}
       </span>
 
-      {/* Weight input */}
+      {/* Prescribed weight (muted, non-editable) */}
+      <div style={mutedCellStyle}>{prescribedWeight}</div>
+
+      {/* Prescribed reps (muted, non-editable) */}
+      <div style={mutedCellStyle}>{prescribedReps}</div>
+
+      {/* Actual weight input */}
       <input
         type="number"
         placeholder="—"
         value={row.weight}
         disabled={isCompleted}
         onChange={(e) => onWeightChange(e.target.value)}
-        style={{
-          backgroundColor: isCompleted ? `${accentColor}18` : SURFACE,
-          border: `1px solid ${isCompleted ? accentColor + '55' : SURFACE_HIGH}`,
-          borderRadius: '12px',
-          padding: '10px 0',
-          textAlign: 'center',
-          color: isCompleted ? accentColor : ON_SURFACE,
-          fontFamily: 'Manrope, sans-serif',
-          fontWeight: 700,
-          fontSize: '0.88rem',
-          outline: 'none',
-          width: '100%',
-          transition: 'all 0.2s',
-          appearance: 'textfield',
-        }}
+        style={inputStyle}
       />
 
-      {/* Reps input */}
+      {/* Actual reps input */}
       <input
         type="number"
         placeholder="—"
         value={row.reps}
         disabled={isCompleted}
         onChange={(e) => onRepsChange(e.target.value)}
-        style={{
-          backgroundColor: isCompleted ? `${accentColor}18` : SURFACE,
-          border: `1px solid ${isCompleted ? accentColor + '55' : SURFACE_HIGH}`,
-          borderRadius: '12px',
-          padding: '10px 0',
-          textAlign: 'center',
-          color: isCompleted ? accentColor : ON_SURFACE,
-          fontFamily: 'Manrope, sans-serif',
-          fontWeight: 700,
-          fontSize: '0.88rem',
-          outline: 'none',
-          width: '100%',
-          transition: 'all 0.2s',
-          appearance: 'textfield',
-        }}
+        style={inputStyle}
       />
 
       {/* Check button */}
@@ -163,9 +192,9 @@ function SetRowItem({
         type="button"
         onClick={onComplete}
         style={{
-          width: '44px',
-          height: '44px',
-          borderRadius: '13px',
+          width: '40px',
+          height: '40px',
+          borderRadius: '12px',
           border: isCompleted ? `1.5px solid ${accentColor}88` : `1.5px solid ${SURFACE_HIGH}`,
           backgroundColor: isCompleted ? `${accentColor}22` : SURFACE,
           cursor: 'pointer',
@@ -178,7 +207,7 @@ function SetRowItem({
         }}
       >
         <Check
-          size={15}
+          size={14}
           color={isCompleted ? accentColor : OUTLINE}
           strokeWidth={isCompleted ? 2.5 : 1.8}
           style={{ transition: 'all 0.18s' }}
@@ -194,6 +223,7 @@ function ExerciseCard({
   exercise,
   rows,
   accentColor,
+  prescription,
   isActive,
   onActivate,
   draggingId,
@@ -209,6 +239,7 @@ function ExerciseCard({
   exercise: ExerciseItem;
   rows: SetRow[];
   accentColor: string;
+  prescription: Prescription | undefined;
   isActive: boolean;
   onActivate: () => void;
   draggingId: string | null;
@@ -221,6 +252,16 @@ function ExerciseCard({
   onSetComplete: (rowIndex: number) => void;
   onAddSet: () => void;
 }) {
+  const phase = prescription?.enginePhase;
+  const isBaselineLike = phase === 'BASELINE' || phase === 'CALIBRATING';
+  const prescribedWeight = !prescription
+    ? '—'
+    : isBaselineLike
+      ? '—'
+      : `${prescription.weightTarget}`;
+  const prescribedReps = prescription
+    ? formatRepRange(prescription.repRangeLow, prescription.repRangeHigh)
+    : '—';
   const [note, setNote] = useState('');
   const isDragging = draggingId === exercise.id;
 
@@ -339,20 +380,22 @@ function ExerciseCard({
         </div>
       </div>
 
-      {/* Column headers */}
+      {/* Column headers: SET | PRESCRIBED KG | PRESCRIBED REPS | ACTUAL KG | ACTUAL REPS | ✓ */}
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: '32px 1fr 1fr 44px',
-          gap: '8px',
+          gridTemplateColumns: SET_ROW_GRID,
+          gap: SET_ROW_GAP,
           marginBottom: '6px',
           marginLeft: '10px',
           padding: '0 2px',
         }}
       >
-        <span style={{ fontSize: '0.58rem', fontFamily: 'Manrope, sans-serif', fontWeight: 700, color: OUTLINE, letterSpacing: '0.12em' }}>SET</span>
-        <span style={{ fontSize: '0.58rem', fontFamily: 'Manrope, sans-serif', fontWeight: 700, color: OUTLINE, letterSpacing: '0.12em', textAlign: 'center' }}>KG</span>
-        <span style={{ fontSize: '0.58rem', fontFamily: 'Manrope, sans-serif', fontWeight: 700, color: OUTLINE, letterSpacing: '0.12em', textAlign: 'center' }}>REPS</span>
+        <span style={{ fontSize: '0.54rem', fontFamily: 'Manrope, sans-serif', fontWeight: 700, color: OUTLINE, letterSpacing: '0.1em' }}>SET</span>
+        <span style={{ fontSize: '0.5rem', fontFamily: 'Manrope, sans-serif', fontWeight: 700, color: OUTLINE, letterSpacing: '0.08em', textAlign: 'center' }}>RX KG</span>
+        <span style={{ fontSize: '0.5rem', fontFamily: 'Manrope, sans-serif', fontWeight: 700, color: OUTLINE, letterSpacing: '0.08em', textAlign: 'center' }}>RX REPS</span>
+        <span style={{ fontSize: '0.5rem', fontFamily: 'Manrope, sans-serif', fontWeight: 700, color: accentColor, letterSpacing: '0.08em', textAlign: 'center' }}>KG</span>
+        <span style={{ fontSize: '0.5rem', fontFamily: 'Manrope, sans-serif', fontWeight: 700, color: accentColor, letterSpacing: '0.08em', textAlign: 'center' }}>REPS</span>
         <span />
       </div>
 
@@ -363,8 +406,9 @@ function ExerciseCard({
             key={row.id}
             row={row}
             rowIndex={rowIndex}
-            exerciseId={exercise.id}
             accentColor={accentColor}
+            prescribedWeight={prescribedWeight}
+            prescribedReps={prescribedReps}
             onWeightChange={(val) => onSetWeightChange(rowIndex, val)}
             onRepsChange={(val) => onSetRepsChange(rowIndex, val)}
             onComplete={() => onSetComplete(rowIndex)}
@@ -434,6 +478,406 @@ function ExerciseCard({
   );
 }
 
+// ─── Sub-component: Prescription Card ─────────────────────────────────────────
+
+function PrescriptionCard({
+  prescription,
+  loading,
+  hasError,
+}: {
+  prescription: Prescription | undefined;
+  loading: boolean;
+  hasError: boolean;
+}) {
+  // Loading skeleton
+  if (loading && !prescription) {
+    return (
+      <div
+        style={{
+          backgroundColor: SURFACE_CONTAINER,
+          border: `1px solid ${SURFACE_HIGH}`,
+          borderLeft: `3px solid ${PRIMARY}`,
+          borderRadius: '16px',
+          padding: '14px 14px 12px',
+        }}
+      >
+        <p
+          style={{
+            margin: '0 0 6px',
+            fontSize: '0.58rem',
+            letterSpacing: '0.18em',
+            textTransform: 'uppercase',
+            fontWeight: 700,
+            color: OUTLINE,
+          }}
+        >
+          Engine Prescription
+        </p>
+        <div
+          style={{
+            width: '42%',
+            height: '22px',
+            borderRadius: '8px',
+            backgroundColor: SURFACE_HIGH,
+            marginBottom: '8px',
+          }}
+        />
+        <div
+          style={{
+            width: '100%',
+            height: '12px',
+            borderRadius: '6px',
+            backgroundColor: SURFACE_HIGH,
+            opacity: 0.7,
+          }}
+        />
+      </div>
+    );
+  }
+
+  // No prescription yet
+  if (!prescription) {
+    return (
+      <div
+        style={{
+          backgroundColor: SURFACE_CONTAINER,
+          border: `1px solid ${SURFACE_HIGH}`,
+          borderLeft: `3px solid ${PRIMARY}`,
+          borderRadius: '16px',
+          padding: '14px 14px 12px',
+        }}
+      >
+        <p
+          style={{
+            margin: '0 0 6px',
+            fontSize: '0.58rem',
+            letterSpacing: '0.18em',
+            textTransform: 'uppercase',
+            fontWeight: 700,
+            color: OUTLINE,
+          }}
+        >
+          Engine Prescription
+        </p>
+        <p
+          style={{
+            margin: 0,
+            color: hasError ? ERROR : OUTLINE,
+            fontSize: '0.74rem',
+          }}
+        >
+          {hasError
+            ? 'Could not load recommendation'
+            : 'No recommendation available'}
+        </p>
+      </div>
+    );
+  }
+
+  const phase = prescription.enginePhase;
+  const repRange = formatRepRange(
+    prescription.repRangeLow,
+    prescription.repRangeHigh,
+  );
+  const isBaselineLike = phase === 'BASELINE' || phase === 'CALIBRATING';
+  const isLearning = phase === 'LEARNING';
+  const isActive = phase === 'ACTIVE';
+  const confColor = confidenceColor(prescription.confidenceLevel);
+
+  // ── BASELINE / CALIBRATING: muted baseline card ──
+  if (isBaselineLike) {
+    return (
+      <div
+        style={{
+          backgroundColor: SURFACE_CONTAINER,
+          border: `1px solid ${SURFACE_HIGH}`,
+          borderLeft: `3px solid ${OUTLINE}`,
+          borderRadius: '16px',
+          padding: '14px 14px 12px',
+          opacity: 0.92,
+        }}
+      >
+        <p
+          style={{
+            margin: '0 0 6px',
+            fontSize: '0.58rem',
+            letterSpacing: '0.18em',
+            textTransform: 'uppercase',
+            fontWeight: 700,
+            color: OUTLINE,
+          }}
+        >
+          Engine Prescription
+        </p>
+        <p
+          style={{
+            margin: '0 0 4px',
+            fontFamily: "'Space Grotesk', sans-serif",
+            fontSize: '1.02rem',
+            fontWeight: 800,
+            color: ON_SURFACE,
+          }}
+        >
+          Building your baseline
+        </p>
+        <p
+          style={{
+            margin: '0 0 10px',
+            color: OUTLINE,
+            fontSize: '0.74rem',
+            lineHeight: 1.4,
+          }}
+        >
+          Log your best effort — prescriptions personalise from session 3 onward.
+        </p>
+        <div
+          style={{
+            display: 'flex',
+            gap: '14px',
+            color: OUTLINE,
+            fontSize: '0.7rem',
+            fontWeight: 700,
+            letterSpacing: '0.06em',
+            textTransform: 'uppercase',
+          }}
+        >
+          <span>{prescription.setTarget} sets</span>
+          <span>{repRange} reps</span>
+        </div>
+      </div>
+    );
+  }
+
+  // ── LEARNING / ACTIVE: full prescription card ──
+  return (
+    <div
+      style={{
+        backgroundColor: SURFACE_CONTAINER,
+        border: `1px solid ${SURFACE_HIGH}`,
+        borderLeft: `3px solid ${PRIMARY}`,
+        borderRadius: '16px',
+        padding: '14px 14px 12px',
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: '8px',
+          gap: '8px',
+          flexWrap: 'wrap',
+        }}
+      >
+        <p
+          style={{
+            margin: 0,
+            fontSize: '0.58rem',
+            letterSpacing: '0.18em',
+            textTransform: 'uppercase',
+            fontWeight: 700,
+            color: OUTLINE,
+          }}
+        >
+          Engine Prescription
+        </p>
+        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+          {isLearning && (
+            <span
+              style={{
+                fontSize: '0.58rem',
+                letterSpacing: '0.1em',
+                textTransform: 'uppercase',
+                fontWeight: 800,
+                color: TERTIARY,
+                backgroundColor: `${TERTIARY}1f`,
+                border: `1px solid ${TERTIARY}55`,
+                borderRadius: '9999px',
+                padding: '3px 8px',
+              }}
+            >
+              Learning
+            </span>
+          )}
+          <span
+            style={{
+              fontSize: '0.64rem',
+              letterSpacing: '0.08em',
+              textTransform: 'uppercase',
+              fontWeight: 800,
+              color: SURFACE,
+              backgroundColor: PRIMARY,
+              border: `1px solid ${PRIMARY}`,
+              borderRadius: '9999px',
+              padding: '4px 10px',
+              boxShadow: `0 0 12px -4px ${PRIMARY_GLOW}`,
+            }}
+          >
+            {prescription.actionLabel}
+          </span>
+        </div>
+      </div>
+
+      {/* Target metrics */}
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: '1fr 1fr 1fr',
+          gap: '8px',
+          marginBottom: '10px',
+        }}
+      >
+        <div>
+          <p style={{ margin: 0, fontSize: '0.54rem', letterSpacing: '0.1em', textTransform: 'uppercase', color: OUTLINE, fontWeight: 700 }}>
+            Weight
+          </p>
+          <p
+            style={{
+              margin: '2px 0 0',
+              fontFamily: "'Space Grotesk', sans-serif",
+              fontSize: '1.1rem',
+              fontWeight: 900,
+              color: ON_SURFACE,
+            }}
+          >
+            {prescription.weightTarget}
+            <span style={{ fontSize: '0.7rem', fontWeight: 600, color: OUTLINE, marginLeft: '3px' }}>kg</span>
+          </p>
+        </div>
+        <div>
+          <p style={{ margin: 0, fontSize: '0.54rem', letterSpacing: '0.1em', textTransform: 'uppercase', color: OUTLINE, fontWeight: 700 }}>
+            Reps
+          </p>
+          <p
+            style={{
+              margin: '2px 0 0',
+              fontFamily: "'Space Grotesk', sans-serif",
+              fontSize: '1.1rem',
+              fontWeight: 900,
+              color: ON_SURFACE,
+            }}
+          >
+            {repRange}
+          </p>
+        </div>
+        <div>
+          <p style={{ margin: 0, fontSize: '0.54rem', letterSpacing: '0.1em', textTransform: 'uppercase', color: OUTLINE, fontWeight: 700 }}>
+            Sets
+          </p>
+          <p
+            style={{
+              margin: '2px 0 0',
+              fontFamily: "'Space Grotesk', sans-serif",
+              fontSize: '1.1rem',
+              fontWeight: 900,
+              color: ON_SURFACE,
+            }}
+          >
+            {prescription.setTarget}
+          </p>
+        </div>
+      </div>
+
+      {/* Confidence indicator (ACTIVE only) */}
+      {isActive && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            marginBottom: '8px',
+          }}
+        >
+          <span
+            style={{
+              width: '6px',
+              height: '6px',
+              borderRadius: '9999px',
+              backgroundColor: confColor,
+              boxShadow: `0 0 6px ${confColor}`,
+            }}
+          />
+          <span
+            style={{
+              fontSize: '0.62rem',
+              fontWeight: 700,
+              color: confColor,
+              letterSpacing: '0.08em',
+              textTransform: 'uppercase',
+            }}
+          >
+            {confidenceLabel(prescription.confidenceLevel)} confidence
+          </span>
+        </div>
+      )}
+
+      {/* Coaching note */}
+      {prescription.coachingNote && (
+        <div
+          style={{
+            backgroundColor: `${PRIMARY}12`,
+            border: `1px solid ${PRIMARY}33`,
+            borderRadius: '10px',
+            padding: '8px 10px',
+            marginBottom: '8px',
+          }}
+        >
+          <p
+            style={{
+              margin: 0,
+              color: ON_SURFACE,
+              fontSize: '0.72rem',
+              lineHeight: 1.4,
+            }}
+          >
+            <span
+              style={{
+                color: PRIMARY,
+                fontWeight: 800,
+                letterSpacing: '0.06em',
+                textTransform: 'uppercase',
+                fontSize: '0.56rem',
+                marginRight: '6px',
+              }}
+            >
+              Coach tip
+            </span>
+            {prescription.coachingNote}
+          </p>
+        </div>
+      )}
+
+      {/* Reason */}
+      <p
+        style={{
+          margin: 0,
+          color: OUTLINE,
+          fontSize: '0.72rem',
+          lineHeight: 1.4,
+        }}
+      >
+        {prescription.reason}
+      </p>
+
+      {/* Progression step */}
+      {prescription.progressionStep && (
+        <p
+          style={{
+            margin: '8px 0 0',
+            color: TERTIARY,
+            fontSize: '0.66rem',
+            fontWeight: 700,
+            letterSpacing: '0.06em',
+            textTransform: 'uppercase',
+          }}
+        >
+          {prescription.progressionStep}
+        </p>
+      )}
+    </div>
+  );
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function WorkoutPage() {
@@ -445,8 +889,6 @@ export default function WorkoutPage() {
     clearSession,
     prescriptions,
     setPrescription,
-    setSessionMode,
-    sessionMode,
   } = useSessionStore();
 
   const [workout, setWorkout] = useState<any>(null);
@@ -467,6 +909,9 @@ export default function WorkoutPage() {
     useState<Record<string, boolean>>({});
   const [prescriptionErrorByExercise, setPrescriptionErrorByExercise] =
     useState<Record<string, boolean>>({});
+  const [dismissedSubstitutionByExercise, setDismissedSubstitutionByExercise] =
+    useState<Record<string, boolean>>({});
+  const [substitutionSubmitting, setSubstitutionSubmitting] = useState(false);
 
   // Live timer
   const [elapsedSec, setElapsedSec] = useState(0);
@@ -494,8 +939,7 @@ export default function WorkoutPage() {
 
   async function loadExercises() {
     try {
-      const res = await exercisesApi.findAll();
-      const list = Array.isArray(res.data) ? res.data : [];
+      const list = await exercisesApi.getExercises();
       setExercises(list);
       setSessionDays((current) => {
         if (current[0]?.exercises.length) return current;
@@ -514,7 +958,7 @@ export default function WorkoutPage() {
     try {
       await workoutsApi.complete(workoutId);
       clearSession();
-      router.push('/dashboard');
+      router.push(`/biofeedback?workoutId=${workoutId}`);
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         return;
@@ -647,6 +1091,97 @@ export default function WorkoutPage() {
   const prescriptionError = activeExercise
     ? !!prescriptionErrorByExercise[activeExercise.id]
     : false;
+  const activeSubstitution = activePrescription?.substitution;
+  const shouldShowSubstitutionCard =
+    !!activeExercise &&
+    !!activeSubstitution &&
+    activeSubstitution.action === 'SUBSTITUTE' &&
+    !!activeSubstitution.recommended &&
+    !!activeSubstitution.originalExercise &&
+    !dismissedSubstitutionByExercise[activeExercise.id];
+  const candidateOptions = shouldShowSubstitutionCard
+    ? (activeSubstitution?.candidates ?? []).filter(
+        (candidate) =>
+          candidate.exerciseId !== activeSubstitution?.recommended?.exerciseId,
+      )
+    : [];
+
+  const formatJointLabel = (joint?: string) =>
+    (joint ?? 'JOINT')
+      .toLowerCase()
+      .replace(/_/g, ' ');
+
+  const fetchPrescriptionForExercise = useCallback(
+    async (exerciseId: string, options?: { force?: boolean }) => {
+      const cached = prescriptions[exerciseId];
+      if (cached && !options?.force) return;
+
+      setPrescriptionLoadingByExercise((current) => ({
+        ...current,
+        [exerciseId]: true,
+      }));
+      setPrescriptionErrorByExercise((current) => ({
+        ...current,
+        [exerciseId]: false,
+      }));
+
+      try {
+        const res = await workoutsApi.getPrescription(workoutId, exerciseId);
+        const data = res?.data;
+        if (!data || typeof data !== 'object') {
+          throw new Error('Invalid prescription response');
+        }
+
+        const substitutionRaw = (data as Prescription).substitution;
+        const prescription: Prescription = {
+          exerciseId,
+          action: data.action ?? 'HOLD',
+          actionLabel: data.actionLabel ?? 'Hold',
+          weightTarget:
+            typeof data.weightTarget === 'number' ? data.weightTarget : 0,
+          repRangeLow:
+            typeof data.repRangeLow === 'number' ? data.repRangeLow : 0,
+          repRangeHigh:
+            typeof data.repRangeHigh === 'number' ? data.repRangeHigh : 0,
+          setTarget:
+            typeof data.setTarget === 'number' ? data.setTarget : 0,
+          reason: data.reason ?? 'No detailed recommendation provided.',
+          enginePhase: (data.enginePhase ?? 'BASELINE') as Prescription['enginePhase'],
+          physiologicalState: data.physiologicalState ?? 'UNKNOWN',
+          confidenceLevel: data.confidenceLevel ?? 'INSUFFICIENT_DATA',
+          coachingNote: data.coachingNote ?? null,
+          progressionStep: data.progressionStep ?? null,
+          volumeProgressionReason: data.volumeProgressionReason,
+          substitution:
+            substitutionRaw && typeof substitutionRaw === 'object'
+              ? {
+                  action: (substitutionRaw.action ?? 'NONE') as PrescriptionSubstitution['action'],
+                  reason: substitutionRaw.reason ?? '',
+                  affectedJoint: substitutionRaw.affectedJoint,
+                  originalExercise: substitutionRaw.originalExercise,
+                  recommended: substitutionRaw.recommended,
+                  candidates: Array.isArray(substitutionRaw.candidates)
+                    ? substitutionRaw.candidates
+                    : [],
+                }
+              : { action: 'NONE', reason: '' },
+        };
+
+        setPrescription(exerciseId, prescription);
+      } catch {
+        setPrescriptionErrorByExercise((current) => ({
+          ...current,
+          [exerciseId]: true,
+        }));
+      } finally {
+        setPrescriptionLoadingByExercise((current) => ({
+          ...current,
+          [exerciseId]: false,
+        }));
+      }
+    },
+    [prescriptions, setPrescription, workoutId],
+  );
 
   useEffect(() => {
     if (!dayExercises.length) {
@@ -664,77 +1199,101 @@ export default function WorkoutPage() {
 
   useEffect(() => {
     if (!activeExerciseId) return;
+    void fetchPrescriptionForExercise(activeExerciseId);
+  }, [
+    activeExerciseId,
+    fetchPrescriptionForExercise,
+  ]);
 
-    const cached = prescriptions[activeExerciseId];
-    if (cached) {
-      if (!sessionMode && cached.sessionMode && cached.sessionModeLabel) {
-        setSessionMode(cached.sessionMode, cached.sessionModeLabel);
-      }
+  // Fire prescription fetches for ALL exercises in the active day in parallel.
+  // Each call is fire-and-forget; no awaiting blocks render.
+  useEffect(() => {
+    if (!dayExercises.length) return;
+    dayExercises.forEach((exercise) => {
+      void fetchPrescriptionForExercise(exercise.id);
+    });
+  }, [dayExercises, fetchPrescriptionForExercise]);
+
+  async function handleConfirmSwap() {
+    if (
+      !activeExercise ||
+      !activeSubstitution?.recommended ||
+      !activeSubstitution?.originalExercise
+    ) {
       return;
     }
 
-    let cancelled = false;
-    setPrescriptionLoadingByExercise((current) => ({
-      ...current,
-      [activeExerciseId]: true,
-    }));
-    setPrescriptionErrorByExercise((current) => ({
-      ...current,
-      [activeExerciseId]: false,
-    }));
+    const originalExerciseId =
+      activeSubstitution.originalExercise.exerciseId ?? activeExercise.id;
+    const substituteExerciseId = activeSubstitution.recommended.exerciseId;
+    const substituteExerciseName = activeSubstitution.recommended.name;
 
-    workoutsApi
-      .getPrescription(workoutId, activeExerciseId)
-      .then((res) => {
-        if (cancelled) return;
-        const data = res?.data;
-        if (!data || typeof data !== 'object') {
-          throw new Error('Invalid prescription response');
-        }
-
-        const prescription: ExercisePrescription = {
-          exerciseId: activeExerciseId,
-          action: data.action ?? 'HOLD',
-          actionLabel: data.actionLabel ?? 'Hold',
-          weightTarget:
-            typeof data.weightTarget === 'number' ? data.weightTarget : 0,
-          sessionMode: data.sessionMode ?? 'FULL',
-          sessionModeLabel: data.sessionModeLabel ?? 'Full Session',
-          sessionModeColor: data.sessionModeColor ?? PRIMARY,
-          reason: data.reason ?? 'No detailed recommendation provided.',
-        };
-
-        setPrescription(activeExerciseId, prescription);
-        if (!sessionMode && prescription.sessionMode && prescription.sessionModeLabel) {
-          setSessionMode(prescription.sessionMode, prescription.sessionModeLabel);
-        }
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setPrescriptionErrorByExercise((current) => ({
-          ...current,
-          [activeExerciseId]: true,
-        }));
-      })
-      .finally(() => {
-        if (cancelled) return;
-        setPrescriptionLoadingByExercise((current) => ({
-          ...current,
-          [activeExerciseId]: false,
-        }));
+    setSubstitutionSubmitting(true);
+    try {
+      await workoutsApi.confirmSubstitution({
+        workoutId,
+        exerciseId: originalExerciseId,
+        substituteExerciseId,
       });
 
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    activeExerciseId,
-    prescriptions,
-    sessionMode,
-    setPrescription,
-    setSessionMode,
-    workoutId,
-  ]);
+      setDismissedSubstitutionByExercise((current) => ({
+        ...current,
+        [activeExercise.id]: true,
+        [substituteExerciseId]: true,
+      }));
+
+      setSessionDays((prev) =>
+        prev.map((day, index) => {
+          if (index !== activeDayIndex) return day;
+          return {
+            ...day,
+            exercises: day.exercises.map((exercise) =>
+              exercise.id === originalExerciseId
+                ? {
+                    ...exercise,
+                    id: substituteExerciseId,
+                    name: substituteExerciseName,
+                  }
+                : exercise,
+            ),
+          };
+        }),
+      );
+
+      setSetRows((prev) => {
+        const originalRows = prev[originalExerciseId];
+        if (!originalRows) return prev;
+        const rest = { ...prev };
+        delete rest[originalExerciseId];
+        const updatedRows = originalRows.map((row, idx) => ({
+          ...row,
+          id: `${substituteExerciseId}-${idx + 1}`,
+        }));
+        return {
+          ...rest,
+          [substituteExerciseId]: prev[substituteExerciseId] ?? updatedRows,
+        };
+      });
+
+      setActiveExerciseId(substituteExerciseId);
+      await fetchPrescriptionForExercise(substituteExerciseId, { force: true });
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        return;
+      }
+      console.error(err);
+    } finally {
+      setSubstitutionSubmitting(false);
+    }
+  }
+
+  function handleKeepOriginal() {
+    if (!activeExercise) return;
+    setDismissedSubstitutionByExercise((current) => ({
+      ...current,
+      [activeExercise.id]: true,
+    }));
+  }
 
   if (loading) {
     return (
@@ -854,122 +1413,123 @@ export default function WorkoutPage() {
 
         {/* ── Exercise cards ── */}
         {activeExercise && (
-          <div
-            style={{
-              marginBottom: '14px',
-              backgroundColor: SURFACE_CONTAINER,
-              border: `1px solid ${SURFACE_HIGH}`,
-              borderLeft: `3px solid ${activePrescription?.sessionModeColor ?? PRIMARY}`,
-              borderRadius: '16px',
-              padding: '14px 14px 12px',
-            }}
-          >
-            <p
-              style={{
-                margin: '0 0 6px',
-                fontSize: '0.58rem',
-                letterSpacing: '0.18em',
-                textTransform: 'uppercase',
-                fontWeight: 700,
-                color: OUTLINE,
-              }}
-            >
-              Engine Prescription
-            </p>
-            {prescriptionLoading ? (
-              <div>
-                <div
-                  style={{
-                    width: '42%',
-                    height: '22px',
-                    borderRadius: '8px',
-                    backgroundColor: SURFACE_HIGH,
-                    marginBottom: '8px',
-                  }}
-                />
-                <div
-                  style={{
-                    width: '100%',
-                    height: '12px',
-                    borderRadius: '6px',
-                    backgroundColor: SURFACE_HIGH,
-                    opacity: 0.7,
-                  }}
-                />
-              </div>
-            ) : activePrescription ? (
-              <div>
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: '8px',
-                    marginBottom: '8px',
-                    flexWrap: 'wrap',
-                  }}
-                >
-                  <p
-                    style={{
-                      margin: 0,
-                      fontFamily: "'Space Grotesk', sans-serif",
-                      fontSize: '1.02rem',
-                      fontWeight: 800,
-                      color: ON_SURFACE,
-                    }}
-                  >
-                    Target: {activePrescription.weightTarget}kg
-                  </p>
-                  <span
-                    style={{
-                      fontSize: '0.64rem',
-                      letterSpacing: '0.08em',
-                      textTransform: 'uppercase',
-                      fontWeight: 700,
-                      color: activePrescription.sessionModeColor,
-                      backgroundColor: `${activePrescription.sessionModeColor}22`,
-                      border: `1px solid ${activePrescription.sessionModeColor}55`,
-                      borderRadius: '9999px',
-                      padding: '4px 8px',
-                    }}
-                  >
-                    {activePrescription.actionLabel}
-                  </span>
-                </div>
+          <div style={{ marginBottom: '14px', display: 'grid', gap: '10px' }}>
+            {shouldShowSubstitutionCard && (
+              <div
+                style={{
+                  backgroundColor: SURFACE_CONTAINER,
+                  border: `1px solid ${SURFACE_HIGH}`,
+                  borderLeft: `3px solid ${WARNING}`,
+                  borderRadius: '16px',
+                  padding: '14px',
+                }}
+              >
                 <p
                   style={{
                     margin: 0,
-                    color: OUTLINE,
-                    fontSize: '0.74rem',
-                    lineHeight: 1.35,
+                    fontFamily: "'Space Grotesk', sans-serif",
+                    fontSize: '1rem',
+                    fontWeight: 800,
+                    color: WARNING,
+                    letterSpacing: '-0.01em',
                   }}
                 >
-                  {activePrescription.reason}
+                  ⚠ Joint discomfort detected
                 </p>
                 <p
                   style={{
                     margin: '8px 0 0',
-                    color: activePrescription.sessionModeColor,
-                    fontSize: '0.68rem',
-                    fontWeight: 700,
-                    letterSpacing: '0.06em',
-                    textTransform: 'uppercase',
+                    color: ON_SURFACE,
+                    fontSize: '0.74rem',
+                    lineHeight: 1.4,
                   }}
                 >
-                  {activePrescription.sessionModeLabel}
+                  Your {formatJointLabel(activeSubstitution?.affectedJoint)} was
+                  uncomfortable last session. We recommend swapping{' '}
+                  {activeSubstitution?.originalExercise?.name} to{' '}
+                  {activeSubstitution?.recommended?.name}.
                 </p>
+                {candidateOptions.length > 0 && (
+                  <div style={{ marginTop: '10px' }}>
+                    <p
+                      style={{
+                        margin: 0,
+                        color: OUTLINE,
+                        fontSize: '0.66rem',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.08em',
+                        fontWeight: 700,
+                      }}
+                    >
+                      Other options from your pool:
+                    </p>
+                    <ul
+                      style={{
+                        margin: '6px 0 0',
+                        paddingLeft: '16px',
+                        color: ON_SURFACE,
+                        fontSize: '0.72rem',
+                        lineHeight: 1.35,
+                      }}
+                    >
+                      {candidateOptions.map((candidate) => (
+                        <li key={candidate.exerciseId}>{candidate.name}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+                  <button
+                    type="button"
+                    onClick={handleConfirmSwap}
+                    disabled={substitutionSubmitting}
+                    style={{
+                      flex: 1,
+                      padding: '12px 0',
+                      borderRadius: '12px',
+                      border: 'none',
+                      background:
+                        substitutionSubmitting
+                          ? SURFACE_HIGH
+                          : `linear-gradient(135deg, ${PRIMARY} 0%, ${TERTIARY} 100%)`,
+                      color: substitutionSubmitting ? OUTLINE : SURFACE,
+                      fontFamily: "'Space Grotesk', sans-serif",
+                      fontWeight: 900,
+                      fontSize: '0.74rem',
+                      letterSpacing: '0.04em',
+                      cursor: substitutionSubmitting ? 'wait' : 'pointer',
+                    }}
+                  >
+                    {substitutionSubmitting ? 'Confirming…' : 'Confirm swap'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleKeepOriginal}
+                    disabled={substitutionSubmitting}
+                    style={{
+                      flex: 1,
+                      padding: '12px 0',
+                      borderRadius: '12px',
+                      border: `1px solid ${SURFACE_HIGH}`,
+                      background: 'transparent',
+                      color: ON_SURFACE,
+                      fontFamily: 'Manrope, sans-serif',
+                      fontWeight: 700,
+                      fontSize: '0.74rem',
+                      cursor: substitutionSubmitting ? 'not-allowed' : 'pointer',
+                    }}
+                  >
+                    Keep original
+                  </button>
+                </div>
               </div>
-            ) : (
-              <p
-                style={{
-                  margin: 0,
-                  color: prescriptionError ? ERROR : OUTLINE,
-                  fontSize: '0.74rem',
-                }}
-              >
-                No recommendation available
-              </p>
             )}
+
+            <PrescriptionCard
+              prescription={activePrescription}
+              loading={prescriptionLoading}
+              hasError={prescriptionError}
+            />
           </div>
         )}
 
@@ -993,6 +1553,7 @@ export default function WorkoutPage() {
                 exercise={exercise}
                 rows={rows}
                 accentColor={accent}
+                prescription={prescriptions[exercise.id]}
                 isActive={activeExerciseId === exercise.id}
                 onActivate={() => setActiveExerciseId(exercise.id)}
                 draggingId={draggingExerciseId}

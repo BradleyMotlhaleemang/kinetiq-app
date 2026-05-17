@@ -8,7 +8,7 @@ import { useAuthStore } from '@/store/auth.store';
 
 export default function LoginPage() {
   const router = useRouter();
-  const { setTokens, enableDevBypass } = useAuthStore();
+  const { setTokens, enableDevBypass, setUser } = useAuthStore();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -23,7 +23,8 @@ export default function LoginPage() {
       setTokens(res.data.accessToken, res.data.refreshToken);
       try {
         const meRes = await api.get('/api/v1/users/me');
-        const onboardingCompletedAt = meRes?.data?.onboardingCompletedAt;
+        const { onboardingCompletedAt, id, email: userEmail } = meRes?.data ?? {};
+        if (id && userEmail) setUser(id, userEmail);
         if (!onboardingCompletedAt) {
           router.push('/onboarding');
           return;

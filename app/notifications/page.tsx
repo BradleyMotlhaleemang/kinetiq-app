@@ -29,7 +29,7 @@ const TYPE_LABELS: Record<string, string> = {
 const TYPE_DESCRIPTIONS: Record<string, string> = {
   BIOFEEDBACK_PROMPT: 'How did your body feel after your last session?',
   RECOVERY_WARNING: 'Your fatigue load is elevated. Consider a deload.',
-  PAIN_REVIEW_PROMPT: 'Review your joint pain status and substitutions.',
+  PAIN_REVIEW_PROMPT: 'Review your joint pain and recovery status.',
   WORKOUT_REMINDER: 'Your next session is scheduled for today.',
   WEEKLY_FEEDBACK_PROMPT: 'Reflect on your training week.',
   MEAL_REMINDER: 'Track your nutrition to improve readiness accuracy.',

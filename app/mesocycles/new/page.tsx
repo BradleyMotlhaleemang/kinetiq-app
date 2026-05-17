@@ -175,8 +175,7 @@ function MesocyclesNewInner() {
 
   async function loadExercises() {
     try {
-      const res = await exercisesApi.findAll();
-      const list = Array.isArray(res.data) ? res.data : [];
+      const list = await exercisesApi.getExercises();
       setAllExercises(list);
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {

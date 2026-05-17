@@ -16,13 +16,12 @@ const STATIC_PAGE_SUBTITLE = 'Proven split architectures — each one seeds a fu
 /** @static Filter chip labels */
 const STATIC_FILTERS = ['All Goals', 'Hypertrophy', 'Strength', 'Powerbuilding', 'Full Body'];
 
-/** @static Matrix quick-filter labels + default display values */
-const STATIC_MATRIX = [
-  { label: 'Experience', value: 'Any' },
-  { label: 'Duration',   value: '6–8w' },
-  { label: 'Days/Week',  value: '3–5' },
-  { label: 'Equipment',  value: 'Full Gym' },
-];
+const MATRIX_OPTIONS: Record<string, string[]> = {
+  Experience: ['Any', 'Beginner', 'Intermediate', 'Advanced'],
+  Duration:   ['Any', '≤6w', '6–8w', '8–12w', '12w+'],
+  'Days/Week':['Any', '3', '4', '5', '6+'],
+  Equipment:  ['Any', 'Full Gym', 'Minimal', 'Bodyweight'],
+};
 
 /** @static Modal phase breakdown — TODO: drive from template.phases API field */
 const STATIC_MODAL_PHASES = [
@@ -125,6 +124,19 @@ export default function TemplatesPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [search, setSearch] = useState('');
+  const [matrixFilters, setMatrixFilters] = useState<Record<string, string>>({
+    Experience:  'Any',
+    Duration:    'Any',
+    'Days/Week': 'Any',
+    Equipment:   'Any',
+  });
+
+  function cycleMatrix(label: string) {
+    const options = MATRIX_OPTIONS[label] ?? ['Any'];
+    const current = matrixFilters[label] ?? 'Any';
+    const next = options[(options.indexOf(current) + 1) % options.length] ?? 'Any';
+    setMatrixFilters((prev) => ({ ...prev, [label]: next }));
+  }
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -175,7 +187,28 @@ export default function TemplatesPage() {
       search.trim().length === 0
         ? true
         : `${template.name} ${template.tag} ${template.goal}`.toLowerCase().includes(search.toLowerCase()),
-    );
+    )
+    .filter((template) => {
+      const exp = matrixFilters['Experience'] ?? 'Any';
+      if (exp !== 'Any' && !template.experience.toLowerCase().includes(exp.toLowerCase())) return false;
+
+      const dur = matrixFilters['Duration'] ?? 'Any';
+      if (dur !== 'Any') {
+        const w = template.durationWeeks;
+        if (dur === '≤6w'   && w > 6)           return false;
+        if (dur === '6–8w'  && (w < 6 || w > 8)) return false;
+        if (dur === '8–12w' && (w <= 8 || w > 12)) return false;
+        if (dur === '12w+'  && w <= 12)          return false;
+      }
+
+      const days = matrixFilters['Days/Week'] ?? 'Any';
+      if (days !== 'Any') {
+        const freq = template.frequencyPerWeek;
+        if (days === '6+' ? freq < 6 : freq !== parseInt(days, 10)) return false;
+      }
+
+      return true;
+    });
 
   const featured = filtered.find(t => t.featured);
   const rest     = filtered.filter(t => !t.featured);
@@ -267,16 +300,36 @@ export default function TemplatesPage() {
 
         {/* ── Matrix filter row ────────────────────────────────── */}
         <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:8, marginBottom:28 }}>
-          {STATIC_MATRIX.map(m => (
-            <div key={m.label} style={{
-              background:C.surfaceLow, borderRadius:8, padding:'8px 10px',
-              display:'flex', flexDirection:'column', gap:3,
-              cursor:'pointer', border:`1px solid ${C.outlineVariant}`,
-            }}>
-              <span style={{ fontSize:'0.52rem', letterSpacing:'0.18em', textTransform:'uppercase', color:C.outline, fontWeight:700 }}>{m.label}</span>
-              <span style={{ fontSize:11, fontWeight:800, color:C.tertiary }}>{m.value}</span>
-            </div>
-          ))}
+          {Object.keys(MATRIX_OPTIONS).map((label) => {
+            const value = matrixFilters[label] ?? 'Any';
+            const active = value !== 'Any';
+            return (
+              <button
+                key={label}
+                onClick={() => cycleMatrix(label)}
+                style={{
+                  background: active ? `rgba(${rgb(C.primary)},0.1)` : C.surfaceLow,
+                  borderRadius: 8,
+                  padding: '8px 10px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 3,
+                  cursor: 'pointer',
+                  border: `1px solid ${active ? C.primary : C.outlineVariant}`,
+                  textAlign: 'left',
+                  width: '100%',
+                  transition: 'border-color 0.15s, background 0.15s',
+                }}
+              >
+                <span style={{ fontSize:'0.52rem', letterSpacing:'0.18em', textTransform:'uppercase', color: active ? C.primary : C.outline, fontWeight:700 }}>
+                  {label}
+                </span>
+                <span style={{ fontSize:11, fontWeight:800, color: active ? C.primary : C.tertiary }}>
+                  {value}
+                </span>
+              </button>
+            );
+          })}
         </div>
 
         {/* ── Library heading ──────────────────────────────────── */}

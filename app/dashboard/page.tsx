@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/auth.store';
 import { mesocyclesApi } from '@/lib/api/mesocycles';
 import { workoutsApi } from '@/lib/api/workouts';
-import { ApiError } from '@/lib/api/client';
+import api, { ApiError } from '@/lib/api/client';
 import { ChevronRight, Play, Trophy, Zap } from 'lucide-react';
 import AppHeader from '@/components/AppHeader';
 
@@ -117,6 +117,37 @@ const STATIC_FALLBACK_WORKOUTS = [
   { label: 'Pull Focused B',  date: 'Oct 20', duration: '65 mins' },
   { label: 'Leg Power Load',  date: 'Oct 18', duration: '88 mins' },
 ];
+
+type RecentPR = {
+  id: string;
+  type: 'E1RM' | 'WEIGHT' | 'VOLUME' | string;
+  scope: 'ALL_TIME' | 'MESOCYCLE' | 'MONTHLY' | string;
+  value: number;
+  achievedAt: string;
+  exercise?: { name?: string };
+};
+
+function formatRelativeDate(value: string): string {
+  const date = new Date(value);
+  const diffMs = Date.now() - date.getTime();
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  if (diffDays <= 0) return 'Today';
+  if (diffDays === 1) return '1 day ago';
+  if (diffDays < 7) return `${diffDays} days ago`;
+  const diffWeeks = Math.floor(diffDays / 7);
+  if (diffWeeks === 1) return '1 week ago';
+  if (diffWeeks < 5) return `${diffWeeks} weeks ago`;
+  const diffMonths = Math.floor(diffDays / 30);
+  if (diffMonths === 1) return '1 month ago';
+  return `${diffMonths} months ago`;
+}
+
+function scopeLabel(scope: string): string {
+  if (scope === 'ALL_TIME') return 'ALL TIME';
+  if (scope === 'MESOCYCLE') return 'THIS BLOCK';
+  if (scope === 'MONTHLY') return 'THIS MONTH';
+  return scope;
+}
 
 // ─── Sparkline SVG ────────────────────────────────────────────────────────────
 
@@ -248,6 +279,7 @@ export default function DashboardPage() {
   const router = useRouter();
   const [mesocycle, setMesocycle]       = useState<any>(null);
   const [recentWorkouts, setRecentWorkouts] = useState<any[]>([]);
+  const [recentPrs, setRecentPrs] = useState<RecentPR[]>([]);
   const [loading, setLoading]           = useState(true);
 
   const { isAuthenticated, hydrated, email } = useAuthStore();
@@ -263,16 +295,21 @@ export default function DashboardPage() {
 
   async function loadData() {
     try {
-      const [mesoRes, histRes] = await Promise.allSettled([
+      const [mesoRes, histRes, prsRes] = await Promise.allSettled([
         mesocyclesApi.active(),
         workoutsApi.history(),
+        api.get('/api/v1/prs/recent?limit=5'),
       ]);
       if (mesoRes.status === 'fulfilled') setMesocycle(mesoRes.value.data);
       if (histRes.status === 'fulfilled') setRecentWorkouts(histRes.value.data.slice(0, 3));
+      if (prsRes.status === 'fulfilled') {
+        setRecentPrs(Array.isArray(prsRes.value.data) ? prsRes.value.data : []);
+      }
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         setMesocycle(null);
         setRecentWorkouts([]);
+        setRecentPrs([]);
         return;
       }
       console.error(err);
@@ -459,40 +496,53 @@ export default function DashboardPage() {
                 <Trophy size={16} color={SECONDARY} />
               </div>
 
-              {/* PR card — @static STATIC_PR_* values, wire to PRRecord API */}
-              <div style={{ backgroundColor: SURFACE_HIGH, borderRadius: '16px', padding: '16px', display: 'flex', alignItems: 'center', gap: '16px', border: `1px solid ${SECONDARY}33` }}>
-                <div style={{ width: '52px', height: '52px', borderRadius: '14px', backgroundColor: `${SECONDARY}18`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  <Trophy size={24} color={SECONDARY} />
-                </div>
-                <div>
-                  {/* @static */}
-                  <p style={{ margin: 0, fontSize: '0.62rem', fontWeight: 700, color: OUTLINE, letterSpacing: '0.16em', textTransform: 'uppercase' }}>
-                    {STATIC_PR_EXERCISE}
-                  </p>
-                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px', marginTop: '2px' }}>
-                    {/* @static */}
-                    <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: '1.6rem', fontWeight: 900, color: ON_SURFACE }}>{STATIC_PR_VALUE}</span>
-                    <span style={{ fontSize: '0.78rem', fontWeight: 600, color: OUTLINE }}>{STATIC_PR_UNIT}</span>
-                  </div>
-                  <p style={{ margin: '2px 0 0', fontSize: '0.6rem', fontWeight: 900, color: SECONDARY, letterSpacing: '0.12em', textTransform: 'uppercase' }}>
-                    New Personal Record!
+              {recentPrs.length === 0 ? (
+                <div style={{ backgroundColor: SURFACE_HIGH, borderRadius: '16px', padding: '16px', border: `1px solid ${SURFACE_HIGH}` }}>
+                  <p style={{ margin: 0, fontSize: '0.75rem', color: OUTLINE }}>
+                    Hit your first PR to see it here.
                   </p>
                 </div>
-              </div>
-
-              {/* e1RM sparkline — @static STATIC_SPARKLINE_* values */}
-              <div style={{ backgroundColor: SURFACE_HIGH, borderRadius: '16px', padding: '14px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                  {/* @static */}
-                  <p style={{ margin: 0, fontSize: '0.68rem', fontWeight: 700, color: ON_SURFACE }}>{STATIC_SPARKLINE_LABEL}</p>
-                  {/* @static last data point */}
-                  <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: '0.9rem', fontWeight: 800, color: PRIMARY }}>
-                    {STATIC_SPARKLINE_DATA[STATIC_SPARKLINE_DATA.length - 1]}{STATIC_SPARKLINE_UNIT}
-                  </span>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {recentPrs.map((pr) => (
+                    <div
+                      key={pr.id}
+                      style={{
+                        backgroundColor: SURFACE_HIGH,
+                        borderRadius: '14px',
+                        padding: '12px 14px',
+                        border: `1px solid ${PRIMARY}22`,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: '10px',
+                      }}
+                    >
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        <p style={{ margin: 0, fontSize: '0.85rem', fontWeight: 800, color: ON_SURFACE }}>
+                          {pr.exercise?.name ?? 'Exercise'}
+                        </p>
+                        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: '0.6rem', fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: PRIMARY, backgroundColor: `${PRIMARY}1f`, border: `1px solid ${PRIMARY}44`, borderRadius: '999px', padding: '2px 8px' }}>
+                            {pr.type}
+                          </span>
+                          <span style={{ fontSize: '0.56rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: OUTLINE, backgroundColor: `${OUTLINE}20`, border: `1px solid ${OUTLINE}33`, borderRadius: '999px', padding: '2px 8px' }}>
+                            {scopeLabel(pr.scope)}
+                          </span>
+                        </div>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <p style={{ margin: 0, fontFamily: "'Space Grotesk', sans-serif", fontSize: '1rem', fontWeight: 900, color: ON_SURFACE }}>
+                          {Number(pr.value).toFixed(1)}kg
+                        </p>
+                        <p style={{ margin: '2px 0 0', fontSize: '0.62rem', color: OUTLINE }}>
+                          {formatRelativeDate(pr.achievedAt)}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-                {/* @static */}
-                <Sparkline data={STATIC_SPARKLINE_DATA} color={PRIMARY} height={52} />
-              </div>
+              )}
             </Card>
           </section>
 

@@ -1,294 +1,701 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense } from 'react';
 import AppHeader from '@/components/AppHeader';
-import api, { ApiError } from '@/lib/api/client';
+import { biofeedbackApi, type PrePopulationItem } from '@/lib/api/biofeedback';
 
-const MUSCLES = [
-  'CHEST', 'BACK', 'QUADS', 'HAMSTRINGS', 'GLUTES',
-  'FRONT_DELT', 'SIDE_DELT', 'REAR_DELT',
-  'BICEPS', 'TRICEPS', 'CALVES', 'ABS',
-];
-
-const MUSCLE_LABELS: Record<string, string> = {
-  CHEST: 'Chest', BACK: 'Back', QUADS: 'Quads',
-  HAMSTRINGS: 'Hamstrings', GLUTES: 'Glutes',
-  FRONT_DELT: 'Front Delt', SIDE_DELT: 'Side Delt', REAR_DELT: 'Rear Delt',
-  BICEPS: 'Biceps', TRICEPS: 'Triceps', CALVES: 'Calves', ABS: 'Abs',
+const C = {
+  primary: '#b1c5ff',
+  tertiary: '#59d8de',
+  surface: '#111318',
+  surfaceLow: '#161820',
+  surfaceContainer: '#1e2026',
+  surfaceHigh: '#282a30',
+  outline: '#8e909c',
+  outlineVariant: '#3a3c44',
+  onSurface: '#e2e2e8',
+  onSurfaceVariant: '#c5c6d2',
 };
 
-const JOINT_PAIN_OPTIONS = [
-  { label: 'None', value: 'NONE' },
-  { label: 'A little', value: 'LOW' },
-  { label: 'Moderate', value: 'MODERATE' },
-  { label: 'A lot', value: 'HIGH' },
+type SorenessKey =
+  | 'NEVER_SORE'
+  | 'HEALED_LONG_AGO'
+  | 'HEALED_ON_TIME'
+  | 'STILL_SORE';
+type JointComfortKey =
+  | 'FEELS_GREAT'
+  | 'FEELS_NORMAL'
+  | 'SLIGHT_DISCOMFORT'
+  | 'VERY_UNCOMFORTABLE'
+  | 'SHARP_PAIN';
+type JointAreaKey =
+  | 'SHOULDER'
+  | 'ELBOW'
+  | 'WRIST'
+  | 'HIP'
+  | 'KNEE'
+  | 'ANKLE'
+  | 'LOWER_BACK';
+
+const SORENESS_OPTIONS: Array<{ key: SorenessKey; label: string }> = [
+  { key: 'NEVER_SORE', label: 'Fresh - no soreness at all' },
+  { key: 'HEALED_LONG_AGO', label: 'Recovered well before today' },
+  { key: 'HEALED_ON_TIME', label: 'Recovered just in time' },
+  { key: 'STILL_SORE', label: 'Still sore going into this session' },
 ];
 
-const SORENESS_OPTIONS = [
-  { label: 'Not sore', value: 'NEVER_SORE' },
-  { label: 'Recovered long ago', value: 'HEALED_LONG_AGO' },
-  { label: 'Recovered just in time', value: 'HEALED_ON_TIME' },
-  { label: 'Still feeling it', value: 'STILL_SORE' },
+const JOINT_COMFORT_OPTIONS: Array<{
+  key: JointComfortKey;
+  score: number;
+  label: string;
+}> = [
+  { key: 'FEELS_GREAT', score: 0, label: 'Joints felt great - full range, no issues' },
+  { key: 'FEELS_NORMAL', score: 1, label: 'Normal - nothing worth noting' },
+  {
+    key: 'SLIGHT_DISCOMFORT',
+    score: 3,
+    label: 'Slight discomfort in one or two movements',
+  },
+  {
+    key: 'VERY_UNCOMFORTABLE',
+    score: 6,
+    label: 'Noticeable discomfort that affected my training',
+  },
+  { key: 'SHARP_PAIN', score: 9, label: 'Sharp pain during one or more movements' },
+];
+
+const JOINT_AREA_OPTIONS: Array<{ key: JointAreaKey; label: string }> = [
+  { key: 'SHOULDER', label: 'Shoulders' },
+  { key: 'ELBOW', label: 'Elbows' },
+  { key: 'WRIST', label: 'Wrists' },
+  { key: 'HIP', label: 'Hips' },
+  { key: 'KNEE', label: 'Knees' },
+  { key: 'ANKLE', label: 'Ankles' },
+  { key: 'LOWER_BACK', label: 'Lower Back' },
+];
+
+const PERFORMANCE_OPTIONS = [
+  { value: 1, label: "Struggled - couldn't complete prescribed work" },
+  { value: 2, label: 'Below normal - reps felt grinding or sloppy' },
+  { value: 3, label: 'Solid - completed everything, good form' },
+  { value: 4, label: 'Excellent - strong execution throughout' },
+];
+
+const TRAINING_DRIVE_OPTIONS = [
+  { value: 1, label: 'Had to force myself through it' },
+  { value: 2, label: "Wasn't feeling it, but got it done" },
+  { value: 3, label: 'Normal - showed up ready to work' },
+  { value: 4, label: 'Locked in - wanted to be here' },
+];
+
+const EFFORT_OPTIONS = [
+  { value: 1, label: 'Noticeably easier than usual' },
+  { value: 2, label: 'About normal' },
+  { value: 3, label: 'Harder than usual' },
+  { value: 4, label: "One of the harder sessions I've had" },
 ];
 
 const PUMP_OPTIONS = [
-  { label: 'Low', value: 'LOW' },
-  { label: 'Moderate', value: 'MODERATE' },
-  { label: 'Amazing', value: 'AMAZING' },
+  { value: 1, label: 'Flat all session - nothing there' },
+  { value: 2, label: 'Below average' },
+  { value: 3, label: 'Good pump' },
+  { value: 4, label: 'Skin-splitting - dialled in' },
 ];
 
-const VOLUME_OPTIONS = [
-  { label: 'Not enough', value: 'NOT_ENOUGH' },
-  { label: 'Just right', value: 'JUST_RIGHT' },
-  { label: 'Pushed limits', value: 'PUSHED_LIMITS' },
-  { label: 'Too much', value: 'TOO_MUCH' },
-];
+const SORENESS_SCORE_MAP: Record<SorenessKey, number> = {
+  NEVER_SORE: 0,
+  HEALED_LONG_AGO: 2,
+  HEALED_ON_TIME: 5,
+  STILL_SORE: 8,
+};
 
-interface MuscleFeedback {
-  muscleGroup: string;
-  jointPain: string;
-  soreness: string;
-  pump: string;
-  volume: string;
+const JOINT_SCORE_MAP: Record<JointComfortKey, number> = {
+  FEELS_GREAT: 0,
+  FEELS_NORMAL: 1,
+  SLIGHT_DISCOMFORT: 3,
+  VERY_UNCOMFORTABLE: 6,
+  SHARP_PAIN: 9,
+};
+
+const MUSCLE_LABELS: Record<string, string> = {
+  CHEST: 'Chest',
+  BACK: 'Back',
+  LATS: 'Lats',
+  QUADS: 'Quads',
+  HAMSTRINGS: 'Hamstrings',
+  GLUTES: 'Glutes',
+  FRONT_DELT: 'Front Delts',
+  SIDE_DELT: 'Side Delts',
+  REAR_DELT: 'Rear Delts',
+  BICEPS: 'Biceps',
+  TRICEPS: 'Triceps',
+  CALVES: 'Calves',
+  LOWER_BACK: 'Lower Back',
+  ABS: 'Abs',
+};
+
+function InfoIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <circle cx="8" cy="8" r="6.5" stroke={C.outline} strokeWidth="1.4" />
+      <path d="M8 7v4" stroke={C.outline} strokeWidth="1.5" strokeLinecap="round" />
+      <circle cx="8" cy="5.5" r="0.75" fill={C.outline} />
+    </svg>
+  );
 }
 
 function OptionRow({
-  options, selected, onChange,
+  options,
+  selected,
+  onChange,
 }: {
-  options: { label: string; value: string }[];
-  selected: string;
-  onChange: (v: string) => void;
+  options: Array<{ value: string | number; label: string }>;
+  selected: string | number;
+  onChange: (value: string | number) => void;
 }) {
   return (
-    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-      {options.map((o) => (
+    <div style={{ display: 'grid', gap: 8 }}>
+      {options.map((option) => {
+        const active = selected === option.value;
+        return (
+          <button
+            key={String(option.value)}
+            type="button"
+            onClick={() => onChange(option.value)}
+            style={{
+              width: '100%',
+              textAlign: 'left',
+              background: active ? 'rgba(177,197,255,0.18)' : C.surfaceLow,
+              border: `1px solid ${active ? C.primary : C.outlineVariant}`,
+              color: active ? C.primary : C.onSurfaceVariant,
+              borderRadius: 12,
+              padding: '11px 12px',
+              fontFamily: 'Manrope, sans-serif',
+              fontSize: 12,
+              fontWeight: 700,
+              cursor: 'pointer',
+              transition: 'all 0.18s ease',
+            }}
+          >
+            {option.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function SectionCard({
+  category,
+  title,
+  instruction,
+  info,
+  children,
+}: {
+  category: string;
+  title: string;
+  instruction: string;
+  info: string;
+  children: ReactNode;
+}) {
+  const [showInfo, setShowInfo] = useState(false);
+  return (
+    <section
+      style={{
+        background: C.surfaceContainer,
+        border: `1px solid ${C.outlineVariant}`,
+        borderLeft: `3px solid ${C.primary}`,
+        borderRadius: 16,
+        padding: 16,
+        marginBottom: 12,
+      }}
+    >
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+        <div style={{ flex: 1 }}>
+          <p
+            style={{
+              margin: '0 0 6px',
+              color: C.outline,
+              fontSize: '0.57rem',
+              letterSpacing: '0.22em',
+              textTransform: 'uppercase',
+              fontWeight: 700,
+              fontFamily: 'Manrope, sans-serif',
+            }}
+          >
+            {category}
+          </p>
+          <h2
+            style={{
+              margin: '0 0 8px',
+              color: C.onSurface,
+              fontFamily: 'Space Grotesk, sans-serif',
+              fontSize: 18,
+              fontWeight: 800,
+              letterSpacing: '-0.02em',
+            }}
+          >
+            {title}
+          </h2>
+          <p
+            style={{
+              margin: 0,
+              color: C.onSurfaceVariant,
+              fontFamily: 'Manrope, sans-serif',
+              fontSize: 12,
+            }}
+          >
+            {instruction}
+          </p>
+        </div>
         <button
-          key={o.value}
-          onClick={() => onChange(o.value)}
+          type="button"
+          onClick={() => setShowInfo((prev) => !prev)}
+          title="Show info"
           style={{
-            padding: '8px 14px',
-            borderRadius: '9999px',
-            fontFamily: 'Manrope', fontSize: '0.75rem', fontWeight: 600,
-            letterSpacing: '0.03em',
-            border: 'none', cursor: 'pointer',
-            backgroundColor: selected === o.value ? '#b1c5ff' : '#1a1c20',
-            color: selected === o.value ? '#002c70' : '#8e909c',
-            transition: 'all 0.15s ease',
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            padding: 4,
+            height: 24,
           }}
         >
-          {o.label}
+          <InfoIcon />
         </button>
-      ))}
-    </div>
-  );
-}
-
-function MuscleCard({
-  muscle, feedback, onChange,
-}: {
-  muscle: string;
-  feedback: MuscleFeedback;
-  onChange: (field: keyof MuscleFeedback, value: string) => void;
-}) {
-  return (
-    <div style={{
-      backgroundColor: '#1a1c20',
-      borderTopRightRadius: '0.75rem',
-      borderBottomLeftRadius: '0px',
-      borderTopLeftRadius: '0.125rem',
-      borderBottomRightRadius: '0.125rem',
-      padding: '20px',
-      marginBottom: '12px',
-    }}>
-      <p style={{
-        fontFamily: "'Space Grotesk', sans-serif",
-        fontSize: '1rem', fontWeight: 600,
-        letterSpacing: '-0.02em', color: '#e2e2e8',
-        marginBottom: '20px',
-      }}>
-        {MUSCLE_LABELS[muscle]}
-      </p>
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-        <div>
-          <p className="label-sm" style={{ color: '#444650', marginBottom: '8px' }}>Joint pain</p>
-          <OptionRow options={JOINT_PAIN_OPTIONS} selected={feedback.jointPain} onChange={(v) => onChange('jointPain', v)} />
-        </div>
-        <div>
-          <p className="label-sm" style={{ color: '#444650', marginBottom: '8px' }}>Soreness</p>
-          <OptionRow options={SORENESS_OPTIONS} selected={feedback.soreness} onChange={(v) => onChange('soreness', v)} />
-        </div>
-        <div>
-          <p className="label-sm" style={{ color: '#444650', marginBottom: '8px' }}>Pump</p>
-          <OptionRow options={PUMP_OPTIONS} selected={feedback.pump} onChange={(v) => onChange('pump', v)} />
-        </div>
-        <div>
-          <p className="label-sm" style={{ color: '#444650', marginBottom: '8px' }}>Volume</p>
-          <OptionRow options={VOLUME_OPTIONS} selected={feedback.volume} onChange={(v) => onChange('volume', v)} />
-        </div>
       </div>
-    </div>
+      {showInfo && (
+        <p
+          style={{
+            margin: '10px 0 0',
+            padding: '10px 12px',
+            borderRadius: 10,
+            border: `1px solid ${C.outlineVariant}`,
+            background: C.surfaceLow,
+            color: C.onSurfaceVariant,
+            fontFamily: 'Manrope, sans-serif',
+            fontSize: 12,
+            lineHeight: 1.35,
+          }}
+        >
+          {info}
+        </p>
+      )}
+      <div style={{ marginTop: 12 }}>{children}</div>
+    </section>
   );
-}
-
-function defaultFeedback(muscle: string): MuscleFeedback {
-  return {
-    muscleGroup: muscle,
-    jointPain: 'NONE',
-    soreness: 'HEALED_ON_TIME',
-    pump: 'MODERATE',
-    volume: 'JUST_RIGHT',
-  };
 }
 
 function BiofeedbackForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const workoutId = searchParams.get('workoutId') ?? undefined;
+  const workoutId = searchParams.get('workoutId');
 
-  const [activeMuscles, setActiveMuscles] = useState<string[]>([]);
-  const [showAll, setShowAll] = useState(false);
-  const [feedbacks, setFeedbacks] = useState<Record<string, MuscleFeedback>>({});
+  const [prePopulation, setPrePopulation] = useState<PrePopulationItem[]>([]);
+  const [sorenessByMuscle, setSorenessByMuscle] = useState<Record<string, SorenessKey>>({});
+  const [globalJointComfort, setGlobalJointComfort] =
+    useState<JointComfortKey>('FEELS_NORMAL');
+  const [affectedJoints, setAffectedJoints] = useState<JointAreaKey[]>([]);
+  const [sessionPerformance, setSessionPerformance] = useState<number>(3);
+  const [trainingDrive, setTrainingDrive] = useState<number>(3);
+  const [effortLevel, setEffortLevel] = useState<number>(2);
+  const [pumpScore, setPumpScore] = useState<number>(3);
+  const [isInitializing, setIsInitializing] = useState(true);
   const [loading, setLoading] = useState(false);
-  const [submitted, setSubmitted] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (workoutId) loadMusclesTrained();
-    else setActiveMuscles(MUSCLES.slice(0, 3));
+    if (!workoutId) {
+      setError('Missing workoutId query param.');
+      setIsInitializing(false);
+      return;
+    }
+    void loadPrePopulation(workoutId);
   }, [workoutId]);
 
-  async function loadMusclesTrained() {
+  async function loadPrePopulation(id: string) {
+    setIsInitializing(true);
+    setError(null);
     try {
-      const res = await api.get(`/api/v1/biofeedback/muscles/${workoutId}`);
-      const muscles = res.data.musclesTrainedToday ?? [];
-      setActiveMuscles(muscles.length > 0 ? muscles : MUSCLES.slice(0, 3));
+      const res = await biofeedbackApi.getPrePopulation(id);
+      const items = res.data ?? [];
+      setPrePopulation(items);
+      setSorenessByMuscle(
+        Object.fromEntries(
+          items.map((item) => [
+            item.muscle,
+            (item.lastSorenessLabel as SorenessKey) ?? 'HEALED_ON_TIME',
+          ]),
+        ),
+      );
     } catch {
-      setActiveMuscles(MUSCLES.slice(0, 3));
+      setError('Unable to load pre-population data.');
+    } finally {
+      setIsInitializing(false);
     }
   }
 
-  function updateFeedback(muscle: string, field: keyof MuscleFeedback, value: string) {
-    setFeedbacks((prev) => ({
-      ...prev,
-      [muscle]: { ...(prev[muscle] ?? defaultFeedback(muscle)), [field]: value },
-    }));
+  function toggleAffectedJoint(joint: JointAreaKey) {
+    setAffectedJoints((prev) =>
+      prev.includes(joint) ? prev.filter((j) => j !== joint) : [...prev, joint],
+    );
   }
 
-  const displayMuscles = showAll ? MUSCLES : activeMuscles;
+  const globalJointComfortScore = JOINT_SCORE_MAP[globalJointComfort];
+  const showJointAreas = globalJointComfortScore >= 6;
+  const sorenessLog = useMemo(
+    () =>
+      Object.fromEntries(
+        prePopulation.map(({ muscle }) => [
+          muscle,
+          SORENESS_SCORE_MAP[sorenessByMuscle[muscle] ?? 'HEALED_ON_TIME'],
+        ]),
+      ),
+    [prePopulation, sorenessByMuscle],
+  );
+  const jointComfortLog = useMemo(() => {
+    if (globalJointComfortScore < 6) return {};
+    return Object.fromEntries(
+      affectedJoints.map((joint) => [joint, globalJointComfortScore]),
+    );
+  }, [affectedJoints, globalJointComfortScore]);
 
   async function handleSubmit() {
+    if (!workoutId) return;
     setLoading(true);
+    setError(null);
     try {
-      const muscleGroupFeedback = displayMuscles.map((m) => ({
-        ...(feedbacks[m] ?? defaultFeedback(m)),
-        muscleGroup: m,
+      const muscleGroupFeedback = prePopulation.map(({ muscle }) => ({
+        muscleGroup: muscle,
+        soreness: sorenessByMuscle[muscle] ?? 'HEALED_ON_TIME',
+        jointComfort: globalJointComfort,
+        volume: 'JUST_RIGHT',
       }));
 
-      await api.post('/api/v1/biofeedback', {
+      await biofeedbackApi.submit({
         workoutId,
-        sorenessLog: Object.fromEntries(
-          muscleGroupFeedback.map((m) => [m.muscleGroup,
-            m.soreness === 'STILL_SORE' ? 8
-            : m.soreness === 'HEALED_ON_TIME' ? 5
-            : m.soreness === 'HEALED_LONG_AGO' ? 2 : 0])
-        ),
-        jointPainLog: Object.fromEntries(
-          muscleGroupFeedback.map((m) => [m.muscleGroup,
-            m.jointPain === 'HIGH' ? 8
-            : m.jointPain === 'MODERATE' ? 5
-            : m.jointPain === 'LOW' ? 2 : 0])
-        ),
-        energyLevel: 7,
-        strengthRating: 7,
-        muscleFeel: 7,
-        sleepLastNight: 7,
-        overallWellbeing: 7,
+        sorenessLog,
         muscleGroupFeedback,
+        globalJointComfortScore,
+        jointComfortLog,
+        sessionPerformance,
+        trainingDrive,
+        effortScore: effortLevel,
+        pumpScore,
       });
-      setSubmitted(true);
-    } catch (err) {
-      if (err instanceof ApiError && err.status === 401) {
-        return;
-      }
-      console.error(err);
+      router.push('/dashboard');
+    } catch {
+      setError('Unable to submit biofeedback. Please try again.');
     } finally {
       setLoading(false);
     }
   }
 
-  if (submitted) {
+  if (isInitializing) {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '60vh', textAlign: 'center', gap: '16px' }}>
-        <div style={{ width: '56px', height: '56px', borderRadius: '50%', backgroundColor: '#0a1f10', border: '1px solid #59d8de', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <span style={{ color: '#59d8de', fontSize: '24px' }}>✓</span>
-        </div>
-        <h2 style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: '1.5rem', fontWeight: 700, letterSpacing: '-0.03em', color: '#e2e2e8' }}>
-          Recovery logged.
-        </h2>
-        <p style={{ fontFamily: 'Manrope', fontSize: '0.875rem', color: '#8e909c', maxWidth: '280px' }}>
-          Your feedback will shape the next session's prescription.
-        </p>
-        <button onClick={() => router.push('/dashboard')} className="btn-primary" style={{ color: '#002c70', marginTop: '8px', width: '200px' }}>
-          Back to Dashboard
-        </button>
-      </div>
+      <p
+        style={{
+          color: C.outline,
+          fontFamily: 'Manrope, sans-serif',
+          fontSize: 12,
+          padding: '0 16px',
+        }}
+      >
+        Loading feedback form...
+      </p>
     );
   }
 
   return (
-    <div>
-      <p style={{ fontFamily: 'Manrope', fontSize: '0.875rem', color: '#8e909c', marginBottom: '24px', padding: '0 20px' }}>
-        Rate each muscle you trained. This data drives your next prescription.
+    <div style={{ maxWidth: 600, margin: '0 auto', padding: '26px 16px 0' }}>
+      <p
+        style={{
+          margin: '0 0 6px',
+          color: C.outline,
+          fontSize: '0.57rem',
+          letterSpacing: '0.24em',
+          textTransform: 'uppercase',
+          fontWeight: 700,
+          fontFamily: 'Manrope, sans-serif',
+        }}
+      >
+        SESSION FEEDBACK
+      </p>
+      <h1
+        style={{
+          margin: '0 0 12px',
+          fontFamily: 'Space Grotesk, sans-serif',
+          fontWeight: 900,
+          fontSize: 'clamp(1.6rem,6vw,2.1rem)',
+          letterSpacing: '-0.045em',
+          color: C.onSurface,
+        }}
+      >
+        Post-Workout Biofeedback
+      </h1>
+      <p
+        style={{
+          margin: '0 0 22px',
+          color: C.onSurfaceVariant,
+          fontFamily: 'Manrope, sans-serif',
+          fontSize: 12,
+        }}
+      >
+        Log how this session felt so Kinetiq can adapt your next one.
       </p>
 
-      <div style={{ padding: '0 20px' }}>
-        {displayMuscles.map((muscle) => (
-          <MuscleCard
-            key={muscle}
-            muscle={muscle}
-            feedback={feedbacks[muscle] ?? defaultFeedback(muscle)}
-            onChange={(field, value) => updateFeedback(muscle, field, value)}
-          />
-        ))}
+      {error && (
+        <p
+          style={{
+            margin: '0 0 12px',
+            border: `1px solid ${C.outlineVariant}`,
+            background: C.surfaceLow,
+            color: C.tertiary,
+            borderRadius: 12,
+            padding: '10px 12px',
+            fontFamily: 'Manrope, sans-serif',
+            fontSize: 12,
+          }}
+        >
+          {error}
+        </p>
+      )}
 
-        {!showAll && activeMuscles.length < MUSCLES.length && (
-          <button
-            onClick={() => setShowAll(true)}
+      <SectionCard
+        category="Category 1"
+        title="How are your muscles feeling?"
+        instruction="For each muscle group trained, rate how sore you still feel."
+        info="Rate how sore this muscle feels right now, not how hard you worked it. Soreness tells us whether your recovery is keeping up with your training volume."
+      >
+        {prePopulation.length === 0 ? (
+          <p
             style={{
-              width: '100%', padding: '14px',
-              backgroundColor: 'transparent',
-              border: '1px solid rgba(68,70,80,0.3)',
-              borderRadius: '0.125rem',
-              fontFamily: 'Manrope', fontSize: '0.75rem',
-              fontWeight: 700, letterSpacing: '0.1em',
-              textTransform: 'uppercase', color: '#444650',
-              cursor: 'pointer', marginBottom: '16px',
+              margin: 0,
+              color: C.outline,
+              fontFamily: 'Manrope, sans-serif',
+              fontSize: 12,
             }}
           >
-            Add more muscle groups
-          </button>
+            No trained muscles were found for this workout.
+          </p>
+        ) : (
+          <div style={{ display: 'grid', gap: 10 }}>
+            {prePopulation.map((entry) => (
+              <div
+                key={entry.muscle}
+                style={{
+                  background: C.surfaceLow,
+                  border: `1px solid ${C.outlineVariant}`,
+                  borderRadius: 12,
+                  padding: 12,
+                }}
+              >
+                <p
+                  style={{
+                    margin: '0 0 8px',
+                    color: C.onSurface,
+                    fontFamily: 'Space Grotesk, sans-serif',
+                    fontSize: 15,
+                    fontWeight: 700,
+                  }}
+                >
+                  {MUSCLE_LABELS[entry.muscle] ?? entry.muscle}
+                </p>
+                <OptionRow
+                  options={SORENESS_OPTIONS.map((o) => ({
+                    value: o.key,
+                    label: o.label,
+                  }))}
+                  selected={sorenessByMuscle[entry.muscle] ?? 'HEALED_ON_TIME'}
+                  onChange={(value) =>
+                    setSorenessByMuscle((prev) => ({
+                      ...prev,
+                      [entry.muscle]: value as SorenessKey,
+                    }))
+                  }
+                />
+                {entry.carrySoreness && (
+                  <p
+                    style={{
+                      margin: '9px 0 0',
+                      color: C.tertiary,
+                      fontFamily: 'Manrope, sans-serif',
+                      fontSize: 12,
+                      fontWeight: 700,
+                    }}
+                  >
+                    ⚠ Carrying soreness from last session
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
         )}
+      </SectionCard>
 
-        <button
-          onClick={handleSubmit}
-          disabled={loading}
-          className="btn-primary"
-          style={{ color: '#002c70', marginBottom: '32px' }}
-        >
-          {loading ? 'Saving...' : 'Save feedback'}
-        </button>
-      </div>
+      <SectionCard
+        category="Category 2"
+        title="How did your joints feel during training?"
+        instruction="Think across all your movements today - not just one exercise."
+        info="Joint comfort tracks joint health across your training cycle - not muscle burn or effort. Sharp or persistent discomfort is a signal we use to protect you from injury by adjusting your exercise selection."
+      >
+        <OptionRow
+          options={JOINT_COMFORT_OPTIONS.map((o) => ({
+            value: o.key,
+            label: o.label,
+          }))}
+          selected={globalJointComfort}
+          onChange={(value) => {
+            setGlobalJointComfort(value as JointComfortKey);
+            if (JOINT_SCORE_MAP[value as JointComfortKey] < 6) {
+              setAffectedJoints([]);
+            }
+          }}
+        />
+        {showJointAreas && (
+          <div style={{ marginTop: 12 }}>
+            <p
+              style={{
+                margin: '0 0 8px',
+                color: C.onSurfaceVariant,
+                fontFamily: 'Manrope, sans-serif',
+                fontSize: 12,
+                fontWeight: 700,
+              }}
+            >
+              Which area(s) were affected?
+            </p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {JOINT_AREA_OPTIONS.map((joint) => {
+                const active = affectedJoints.includes(joint.key);
+                return (
+                  <button
+                    key={joint.key}
+                    type="button"
+                    onClick={() => toggleAffectedJoint(joint.key)}
+                    style={{
+                      borderRadius: 100,
+                      border: `1px solid ${active ? C.primary : C.outlineVariant}`,
+                      background: active ? 'rgba(177,197,255,0.18)' : C.surfaceLow,
+                      color: active ? C.primary : C.onSurfaceVariant,
+                      padding: '7px 12px',
+                      fontFamily: 'Manrope, sans-serif',
+                      fontSize: 12,
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {joint.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </SectionCard>
+
+      <SectionCard
+        category="Category 3"
+        title="How well did you execute today?"
+        instruction="Think about rep quality, form, and whether you completed what was prescribed."
+        info="Performance tracks how well training went on this occasion - not how hard you pushed. A 'struggled' session isn't bad; it tells us your prescription may need adjusting."
+      >
+        <OptionRow
+          options={PERFORMANCE_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+          selected={sessionPerformance}
+          onChange={(value) => setSessionPerformance(Number(value))}
+        />
+      </SectionCard>
+
+      <SectionCard
+        category="Category 4"
+        title="What was your drive to train today?"
+        instruction="Your psychological readiness and desire to be in the gym."
+        info="Training drive is separate from how the session went. Don't confuse this with energy levels - rate your desire to train, not how you felt physically."
+      >
+        <OptionRow
+          options={TRAINING_DRIVE_OPTIONS.map((o) => ({
+            value: o.value,
+            label: o.label,
+          }))}
+          selected={trainingDrive}
+          onChange={(value) => setTrainingDrive(Number(value))}
+        />
+      </SectionCard>
+
+      <SectionCard
+        category="Category 5"
+        title="How hard did this session feel?"
+        instruction="Relative to a typical session for you - not how hard you tried."
+        info="This is perceived exertion - how difficult training felt compared to your normal baseline, not a measure of how hard you pushed or how motivated you were."
+      >
+        <OptionRow
+          options={EFFORT_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+          selected={effortLevel}
+          onChange={(value) => setEffortLevel(Number(value))}
+        />
+      </SectionCard>
+
+      <SectionCard
+        category="Category 6"
+        title="How was the pump?"
+        instruction="Global feeling of muscle fullness and blood volume during the session."
+        info="Pump reflects blood flow and cellular hydration during training. Consistently low pump can indicate under-eating, dehydration, or systemic fatigue."
+      >
+        <OptionRow
+          options={PUMP_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+          selected={pumpScore}
+          onChange={(value) => setPumpScore(Number(value))}
+        />
+      </SectionCard>
+
+      <button
+        type="button"
+        onClick={handleSubmit}
+        disabled={loading || !workoutId}
+        style={{
+          width: '100%',
+          padding: '14px 0',
+          borderRadius: 12,
+          border: 'none',
+          background: 'linear-gradient(135deg, #b1c5ff 0%, #3a5cbf 100%)',
+          color: '#05080f',
+          fontFamily: 'Space Grotesk, sans-serif',
+          fontWeight: 900,
+          fontSize: 13,
+          letterSpacing: '0.01em',
+          cursor: loading ? 'wait' : 'pointer',
+          opacity: loading || !workoutId ? 0.65 : 1,
+          marginBottom: 28,
+        }}
+      >
+        {loading ? 'Saving...' : 'Submit biofeedback →'}
+      </button>
     </div>
   );
 }
 
 export default function BiofeedbackPage() {
   return (
-    <div style={{ minHeight: '100dvh', backgroundColor: '#111318', paddingBottom: '96px' }}>
-      <AppHeader title="Recovery Log" showBack backHref="/dashboard" />
-      <Suspense fallback={<p style={{ color: '#8e909c', padding: '20px', fontFamily: 'Manrope' }}>Loading...</p>}>
+    <div
+      style={{
+        minHeight: '100vh',
+        background: C.surface,
+        color: C.onSurface,
+        fontFamily: 'Manrope, sans-serif',
+        paddingBottom: 110,
+        overflowX: 'hidden',
+      }}
+    >
+      <AppHeader title="Biofeedback" showBack backHref="/dashboard" />
+      <Suspense
+        fallback={
+          <p style={{ color: C.outline, padding: '20px', fontFamily: 'Manrope, sans-serif' }}>
+            Loading...
+          </p>
+        }
+      >
         <BiofeedbackForm />
       </Suspense>
     </div>
