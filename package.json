@@ -5,6 +5,7 @@
   "scripts": {
     "setup": "npm install",
     "dev": "next dev --port 3001",
+    "dev:webpack": "next dev --port 3001 --webpack",
     "build": "next build",
     "start": "next start",
     "lint": "eslint"

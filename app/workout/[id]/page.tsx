@@ -888,7 +888,9 @@ export default function WorkoutPage() {
     addSet,
     clearSession,
     prescriptions,
+    rehydrate,
     setPrescription,
+    setWorkoutId,
   } = useSessionStore();
 
   const [workout, setWorkout] = useState<any>(null);
@@ -918,11 +920,13 @@ export default function WorkoutPage() {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
+    setWorkoutId(workoutId);
+    rehydrate(workoutId);
     loadWorkout();
     loadExercises();
     timerRef.current = setInterval(() => setElapsedSec((s) => s + 1), 1000);
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, []);
+  }, [rehydrate, setWorkoutId, workoutId]);
 
   async function loadWorkout() {
     try {
@@ -945,6 +949,20 @@ export default function WorkoutPage() {
         if (current[0]?.exercises.length) return current;
         return [{ ...current[0], exercises: list.slice(0, 4) }];
       });
+
+      const rehydratedSets = useSessionStore.getState().sets;
+      if (Object.keys(rehydratedSets).length > 0) {
+        const restoredRows: Record<string, SetRow[]> = {};
+        for (const [exerciseId, setLogs] of Object.entries(rehydratedSets)) {
+          restoredRows[exerciseId] = setLogs.map((log) => ({
+            id: log.id,
+            weight: String(log.weight),
+            reps: String(log.reps),
+            completed: true,
+          }));
+        }
+        setSetRows((prev) => ({ ...prev, ...restoredRows }));
+      }
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         return;
@@ -1010,12 +1028,15 @@ export default function WorkoutPage() {
         reps: parseInt(row.reps, 10),
       });
       addSet(exerciseId, res.data);
-      setSetRows((prev) => ({
-        ...prev,
-        [exerciseId]: rows.map((current, index) =>
-          index === rowIndex ? { ...current, completed: true } : current
-        ),
-      }));
+      setSetRows((prev) => {
+        const currentRows = prev[exerciseId] ?? [];
+        return {
+          ...prev,
+          [exerciseId]: currentRows.map((r, i) =>
+            i === rowIndex ? { ...r, completed: true } : r
+          ),
+        };
+      });
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         return;

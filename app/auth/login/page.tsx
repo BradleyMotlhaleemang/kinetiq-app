@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import Link from 'next/link';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { authApi } from '@/lib/api/auth';
 import api from '@/lib/api/client';
@@ -13,6 +14,11 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    router.prefetch('/dashboard');
+    router.prefetch('/onboarding');
+  }, [router]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -99,9 +105,9 @@ export default function LoginPage() {
           </div>
 
           <div style={{ textAlign: 'right', marginTop: '-16px' }}>
-            <a href="/auth/forgot-password" style={{ fontFamily: 'Manrope', fontSize: '0.75rem', color: '#444650', textDecoration: 'none' }}>
+            <Link href="/auth/forgot-password" style={{ fontFamily: 'Manrope', fontSize: '0.75rem', color: '#444650', textDecoration: 'none' }}>
               Forgot password?
-            </a>
+            </Link>
           </div>
 
           {error && (
@@ -123,9 +129,9 @@ export default function LoginPage() {
 
         <p style={{ fontFamily: 'Manrope', fontSize: '0.75rem', color: '#444650', marginTop: '32px', textAlign: 'center' }}>
           No account?{' '}
-          <a href="/auth/register" style={{ color: '#b1c5ff', textDecoration: 'none' }}>
+          <Link href="/auth/register" style={{ color: '#b1c5ff', textDecoration: 'none' }}>
             Create one
-          </a>
+          </Link>
         </p>
       </div>
 

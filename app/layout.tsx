@@ -1,53 +1,32 @@
-'use client';
-
 import './globals.css';
-import { usePathname, useRouter } from 'next/navigation';
-import { useCallback, useEffect, useState } from 'react';
-import { useAuthStore } from '@/store/auth.store';
-import SplashScreen from '@/components/SplashScreen';
+import { Manrope, Space_Grotesk } from 'next/font/google';
+import ClientShell from './client-shell';
 import BottomNav from '@/components/navigation/BottomNav';
 
-function StoreHydrator() {
-  const hydrate = useAuthStore((s) => s.hydrate);
-  const router = useRouter();
-  const pathname = usePathname();
+const manrope = Manrope({
+  subsets: ['latin'],
+  variable: '--font-manrope',
+  display: 'swap',
+});
 
-  useEffect(() => {
-    hydrate();
-    if (typeof window !== 'undefined') {
-      const seen = sessionStorage.getItem('hasSeenOnboarding');
-      if (!seen && pathname === '/') {
-        router.replace('/welcome');
-      }
-    }
-  }, [hydrate, pathname, router]);
-
-  return null;
-}
+const spaceGrotesk = Space_Grotesk({
+  subsets: ['latin'],
+  variable: '--font-space-grotesk',
+  display: 'swap',
+});
 
 export default function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const [showSplash, setShowSplash] = useState(true);
-  const handleSplashComplete = useCallback(() => setShowSplash(false), []);
-
   return (
-    <html lang="en">
-      <body
-        style={{
-          backgroundColor: '#111318',
-          color: '#e2e2e8',
-          fontFamily:
-            "'Segoe UI', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif",
-        }}
-      >
-        <StoreHydrator />
-        {showSplash && (
-          <SplashScreen onComplete={handleSplashComplete} />
-        )}
-        {children}
+    <html
+      lang="en"
+      className={`${manrope.variable} ${spaceGrotesk.variable}`}
+    >
+      <body>
+        <ClientShell>{children}</ClientShell>
         <BottomNav />
       </body>
     </html>
