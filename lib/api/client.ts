@@ -17,7 +17,7 @@ export class ApiError extends Error {
 
 function getToken() {
   if (typeof window !== 'undefined') {
-    return sessionStorage.getItem('accessToken');
+    return localStorage.getItem('accessToken');
   }
   return null;
 }
@@ -37,8 +37,8 @@ async function request(method: string, path: string, body?: any) {
 
   if (res.status === 401) {
     if (typeof window !== 'undefined' && token !== DEV_BYPASS_TOKEN) {
-      sessionStorage.removeItem('accessToken');
-      sessionStorage.removeItem('refreshToken');
+      localStorage.removeItem('accessToken');
+      localStorage.removeItem('refreshToken');
       window.location.href = '/auth/login';
     }
   }

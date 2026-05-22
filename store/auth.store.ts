@@ -23,20 +23,20 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   hydrated: false,
 
   hydrate: () => {
-    const accessToken = sessionStorage.getItem('accessToken');
-    const refreshToken = sessionStorage.getItem('refreshToken');
+    const accessToken = localStorage.getItem('accessToken');
+    const refreshToken = localStorage.getItem('refreshToken');
     set({ accessToken, refreshToken, hydrated: true });
   },
 
   setTokens: (accessToken, refreshToken) => {
-    sessionStorage.setItem('accessToken', accessToken);
-    sessionStorage.setItem('refreshToken', refreshToken);
+    localStorage.setItem('accessToken', accessToken);
+    localStorage.setItem('refreshToken', refreshToken);
     set({ accessToken, refreshToken });
   },
 
   enableDevBypass: () => {
-    sessionStorage.setItem('accessToken', DEV_BYPASS_TOKEN);
-    sessionStorage.removeItem('refreshToken');
+    localStorage.setItem('accessToken', DEV_BYPASS_TOKEN);
+    localStorage.removeItem('refreshToken');
     set({
       accessToken: DEV_BYPASS_TOKEN,
       refreshToken: null,
@@ -48,8 +48,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   setUser: (userId, email) => set({ userId, email }),
 
   logout: () => {
-    sessionStorage.removeItem('accessToken');
-    sessionStorage.removeItem('refreshToken');
+    localStorage.removeItem('accessToken');
+    localStorage.removeItem('refreshToken');
     set({ accessToken: null, refreshToken: null, userId: null, email: null });
   },
 

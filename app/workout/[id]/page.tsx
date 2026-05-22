@@ -904,6 +904,7 @@ export default function WorkoutPage() {
   const [completing, setCompleting] = useState(false);
   const [showExercisePicker, setShowExercisePicker] = useState(false);
   const [exerciseQuery, setExerciseQuery] = useState('');
+  const [exerciseLoadError, setExerciseLoadError] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState('ALL');
   const [draggingExerciseId, setDraggingExerciseId] = useState<string | null>(null);
   const [activeExerciseId, setActiveExerciseId] = useState<string | null>(null);
@@ -918,6 +919,7 @@ export default function WorkoutPage() {
   // Live timer
   const [elapsedSec, setElapsedSec] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const hasRehydrated = useRef(false);
 
   useEffect(() => {
     setWorkoutId(workoutId);
@@ -933,7 +935,10 @@ export default function WorkoutPage() {
       const res = await workoutsApi.findOne(workoutId);
       setWorkout(res.data);
       const fallbackLabel = res.data?.splitDayLabel ?? 'Day 1';
-      setSessionDays([{ label: fallbackLabel, exercises: [] }]);
+      setSessionDays((prev) => [{
+        ...prev[0],
+        label: fallbackLabel,
+      }]);
     } catch {
       router.push('/dashboard');
     } finally {
@@ -943,6 +948,7 @@ export default function WorkoutPage() {
 
   async function loadExercises() {
     try {
+      setExerciseLoadError(false);
       const list = await exercisesApi.getExercises();
       setExercises(list);
       setSessionDays((current) => {
@@ -950,24 +956,39 @@ export default function WorkoutPage() {
         return [{ ...current[0], exercises: list.slice(0, 4) }];
       });
 
-      const rehydratedSets = useSessionStore.getState().sets;
-      if (Object.keys(rehydratedSets).length > 0) {
-        const restoredRows: Record<string, SetRow[]> = {};
-        for (const [exerciseId, setLogs] of Object.entries(rehydratedSets)) {
-          restoredRows[exerciseId] = setLogs.map((log) => ({
-            id: log.id,
-            weight: String(log.weight),
-            reps: String(log.reps),
-            completed: true,
-          }));
+      if (!hasRehydrated.current) {
+        hasRehydrated.current = true;
+        const rehydratedSets = useSessionStore.getState().sets;
+        if (Object.keys(rehydratedSets).length > 0) {
+          setSetRows((prev) => {
+            const merged: Record<string, SetRow[]> = { ...prev };
+            for (const [exerciseId, setLogs] of Object.entries(rehydratedSets)) {
+              const existingIds = new Set(
+                (prev[exerciseId] ?? []).map((r) => r.id)
+              );
+              const newRows = setLogs
+                .filter((log) => !existingIds.has(log.id))
+                .map((log) => ({
+                  id: log.id,
+                  weight: String(log.weight),
+                  reps: String(log.reps),
+                  completed: true,
+                }));
+              merged[exerciseId] = [
+                ...(prev[exerciseId] ?? []),
+                ...newRows,
+              ];
+            }
+            return merged;
+          });
         }
-        setSetRows((prev) => ({ ...prev, ...restoredRows }));
       }
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         return;
       }
       console.error(err);
+      setExerciseLoadError(true);
     }
   }
 
@@ -1028,15 +1049,12 @@ export default function WorkoutPage() {
         reps: parseInt(row.reps, 10),
       });
       addSet(exerciseId, res.data);
-      setSetRows((prev) => {
-        const currentRows = prev[exerciseId] ?? [];
-        return {
-          ...prev,
-          [exerciseId]: currentRows.map((r, i) =>
-            i === rowIndex ? { ...r, completed: true } : r
-          ),
-        };
-      });
+      setSetRows((prev) => ({
+        ...prev,
+        [exerciseId]: (prev[exerciseId] ?? []).map((current, index) =>
+          index === rowIndex ? { ...current, completed: true } : current
+        ),
+      }));
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         return;
@@ -1551,6 +1569,13 @@ export default function WorkoutPage() {
               loading={prescriptionLoading}
               hasError={prescriptionError}
             />
+          </div>
+        )}
+
+        {exerciseLoadError && (
+          <div>
+            <p>Could not load exercises.</p>
+            <button onClick={loadExercises}>Retry</button>
           </div>
         )}
 
