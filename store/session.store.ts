@@ -3,6 +3,14 @@ import type { Prescription } from '@/lib/api/workouts';
 
 export type { Prescription };
 
+type ServerSet = {
+  id: string;
+  exerciseId: string;
+  weight: number;
+  reps: number;
+  setNumber: number;
+};
+
 interface SetLog {
   id: string;
   exerciseId: string;
@@ -29,6 +37,8 @@ interface SessionState {
   setPrescription: (exerciseId: string, prescription: Prescription) => void;
 
   rehydrate: (workoutId: string) => void;
+
+  hydrateFromServer: (serverSets: ServerSet[]) => void;
 
   // Used in app/workout/[id]/page.tsx (completeSession) to reset the session
   // state before navigating away after a workout is finished.
@@ -81,6 +91,50 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       });
     } catch {
       return;
+    }
+  },
+
+  hydrateFromServer: (serverSets) => {
+    if (serverSets.length === 0) return;
+
+    const state = get();
+    const serverIds = new Set(serverSets.map((s) => s.id));
+
+    const merged: Record<string, SetLog[]> = {};
+    for (const [exerciseId, logs] of Object.entries(state.sets)) {
+      const kept = logs.filter((log) => !serverIds.has(log.id));
+      if (kept.length > 0) {
+        merged[exerciseId] = kept;
+      }
+    }
+
+    for (const server of serverSets) {
+      const entry: SetLog = {
+        id: server.id,
+        exerciseId: server.exerciseId,
+        setNumber: server.setNumber,
+        weight: server.weight,
+        reps: server.reps,
+      };
+
+      const bucket = merged[server.exerciseId] ?? [];
+      const idx = bucket.findIndex((log) => log.id === server.id);
+      if (idx !== -1) {
+        bucket[idx] = entry;
+        merged[server.exerciseId] = bucket;
+      } else {
+        merged[server.exerciseId] = [...bucket, entry];
+      }
+    }
+
+    set({ sets: merged });
+
+    const currentWorkoutId = get().workoutId;
+    if (currentWorkoutId) {
+      sessionStorage.setItem(
+        `kinetiq_session_sets_${currentWorkoutId}`,
+        JSON.stringify(get().sets)
+      );
     }
   },
 

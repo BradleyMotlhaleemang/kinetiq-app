@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { authApi } from '@/lib/api/auth';
-import api from '@/lib/api/client';
+import api, { ApiError } from '@/lib/api/client';
 import { useAuthStore } from '@/store/auth.store';
 
 export default function LoginPage() {
@@ -25,8 +25,16 @@ export default function LoginPage() {
     setLoading(true);
     setError('');
     try {
-      const res = await authApi.login(email, password);
-      setTokens(res.data.accessToken, res.data.refreshToken);
+      const normalizedEmail = email.trim().toLowerCase();
+      const res = await authApi.login(normalizedEmail, password);
+      const accessToken = res.data?.accessToken;
+      const refreshToken = res.data?.refreshToken;
+      if (!accessToken || !refreshToken) {
+        setError('Login response was invalid. Check that the API is running.');
+        return;
+      }
+      setTokens(accessToken, refreshToken);
+      setUser('', normalizedEmail);
       try {
         const meRes = await api.get('/api/v1/users/me');
         const { onboardingCompletedAt, id, email: userEmail } = meRes?.data ?? {};
@@ -39,8 +47,18 @@ export default function LoginPage() {
         // Keep login resilient: default to dashboard if profile lookup fails.
       }
       router.push('/dashboard');
-    } catch {
-      setError('Invalid email or password');
+    } catch (err) {
+      if (err instanceof ApiError) {
+        if (err.status === 0) {
+          setError(err.message);
+        } else if (err.status === 401) {
+          setError('Invalid email or password');
+        } else {
+          setError(err.message);
+        }
+      } else {
+        setError('Invalid email or password');
+      }
     } finally {
       setLoading(false);
     }

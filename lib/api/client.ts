@@ -29,17 +29,29 @@ async function request(method: string, path: string, body?: any) {
   };
   if (token) headers['Authorization'] = `Bearer ${token}`;
 
-  const res = await fetch(`${BASE_URL}${path}`, {
-    method,
-    headers,
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${BASE_URL}${path}`, {
+      method,
+      headers,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch {
+    throw new ApiError(
+      `Cannot reach API at ${BASE_URL}. Is kinetiq-api running on port 3000?`,
+      0,
+      null,
+    );
+  }
 
   if (res.status === 401) {
     if (typeof window !== 'undefined' && token !== DEV_BYPASS_TOKEN) {
       localStorage.removeItem('accessToken');
       localStorage.removeItem('refreshToken');
-      window.location.href = '/auth/login';
+      const onAuthPage = window.location.pathname.startsWith('/auth/');
+      if (!onAuthPage) {
+        window.location.href = '/auth/login';
+      }
     }
   }
 

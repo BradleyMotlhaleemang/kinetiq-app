@@ -44,6 +44,7 @@ export const workoutsApi = {
     workoutId: string;
     exerciseId: string;
     substituteExerciseId: string;
+    jointAffected: string;
   }) => api.post('/api/v1/substitutions/confirm', data),
 
   addSet: (

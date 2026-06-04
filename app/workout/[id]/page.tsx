@@ -8,7 +8,7 @@ import {
   type PrescriptionSubstitution,
 } from '@/lib/api/workouts';
 import { exercisesApi } from '@/lib/api/exercises';
-import { ApiError } from '@/lib/api/client';
+import api, { ApiError } from '@/lib/api/client';
 import { useSessionStore } from '@/store/session.store';
 import { Check, GripVertical, Plus, Search, Trash2, X, RotateCcw } from 'lucide-react';
 
@@ -19,6 +19,27 @@ type ExerciseItem = {
   name: string;
   equipment?: string | null;
   primaryMuscle?: string | null;
+  movementClass?: string | null;
+  setsTarget?: number;
+  repRangeMin?: number;
+  repRangeMax?: number;
+};
+
+type WorkoutExercisesResponse = {
+  workoutId: string;
+  sessionType: string;
+  splitDayLabel: string | null;
+  exercises: Array<{
+    id: string;
+    exerciseId: string;
+    name: string;
+    orderIndex: number;
+    setsTarget: number;
+    repRangeMin: number;
+    repRangeMax: number;
+    primaryMuscle: string | null;
+    movementClass: string | null;
+  }>;
 };
 
 type SetRow = {
@@ -930,15 +951,71 @@ export default function WorkoutPage() {
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [rehydrate, setWorkoutId, workoutId]);
 
+  useEffect(() => {
+    if (hasRehydrated.current) return;
+    hasRehydrated.current = true;
+
+    const rehydratedSets = useSessionStore.getState().sets;
+    if (Object.keys(rehydratedSets).length === 0) return;
+
+    const seeded: Record<string, SetRow[]> = {};
+    for (const [exerciseId, setLogs] of Object.entries(rehydratedSets)) {
+      seeded[exerciseId] = setLogs.map((log) => ({
+        id: log.id,
+        weight: String(log.weight),
+        reps: String(log.reps),
+        completed: true,
+      }));
+    }
+
+    setSetRows((prev) => {
+      const merged = { ...prev };
+      for (const [exerciseId, sets] of Object.entries(seeded)) {
+        const existing = merged[exerciseId] ?? [];
+        const newSets = sets.filter((s) => !existing.find((e) => e.id === s.id));
+        merged[exerciseId] = [...existing, ...newSets];
+      }
+      return merged;
+    });
+  }, [workoutId]);
+
   async function loadWorkout() {
     try {
       const res = await workoutsApi.findOne(workoutId);
-      setWorkout(res.data);
-      const fallbackLabel = res.data?.splitDayLabel ?? 'Day 1';
+      const data = res.data;
+      setWorkout(data);
+      const fallbackLabel = data?.splitDayLabel ?? 'Day 1';
       setSessionDays((prev) => [{
         ...prev[0],
         label: fallbackLabel,
       }]);
+
+      const { hydrateFromServer } = useSessionStore.getState();
+      hydrateFromServer(data.sets ?? []);
+
+      const allSets = useSessionStore.getState().sets;
+      setSetRows((prev) => {
+        const next = { ...prev };
+        for (const [exerciseId, logs] of Object.entries(allSets)) {
+          let rows = next[exerciseId] ?? [];
+          for (const s of logs) {
+            const idx = rows.findIndex((r) => r.id === s.id);
+            const completedRow: SetRow = {
+              id: s.id,
+              weight: String(s.weight),
+              reps: String(s.reps),
+              completed: true,
+            };
+            if (idx !== -1) {
+              rows = rows.map((r, i) => (i === idx ? completedRow : r));
+            } else {
+              rows = [...rows, completedRow];
+            }
+          }
+          next[exerciseId] = rows;
+        }
+        return next;
+      });
     } catch {
       router.push('/dashboard');
     } finally {
@@ -949,39 +1026,24 @@ export default function WorkoutPage() {
   async function loadExercises() {
     try {
       setExerciseLoadError(false);
-      const list = await exercisesApi.getExercises();
-      setExercises(list);
+      const res = await api.get(`/api/v1/workouts/${workoutId}/exercises`);
+      const payload = res.data as WorkoutExercisesResponse;
+      const workoutExercises = [...(payload.exercises ?? [])]
+        .sort((a, b) => a.orderIndex - b.orderIndex)
+        .map((exercise) => ({
+          id: exercise.exerciseId,
+          name: exercise.name,
+          primaryMuscle: exercise.primaryMuscle,
+          movementClass: exercise.movementClass,
+          setsTarget: exercise.setsTarget,
+          repRangeMin: exercise.repRangeMin,
+          repRangeMax: exercise.repRangeMax,
+        }));
       setSessionDays((current) => {
-        if (current[0]?.exercises.length) return current;
-        return [{ ...current[0], exercises: list.slice(0, 4) }];
+        return [{ ...current[0], exercises: workoutExercises }];
       });
-
-      if (!hasRehydrated.current) {
-        hasRehydrated.current = true;
-        const rehydratedSets = useSessionStore.getState().sets;
-        if (Object.keys(rehydratedSets).length > 0) {
-          setSetRows((prev) => {
-            const merged: Record<string, SetRow[]> = { ...prev };
-            for (const [exerciseId, setLogs] of Object.entries(rehydratedSets)) {
-              const existingIds = new Set(
-                (prev[exerciseId] ?? []).map((r) => r.id)
-              );
-              const newRows = setLogs
-                .filter((log) => !existingIds.has(log.id))
-                .map((log) => ({
-                  id: log.id,
-                  weight: String(log.weight),
-                  reps: String(log.reps),
-                  completed: true,
-                }));
-              merged[exerciseId] = [
-                ...(prev[exerciseId] ?? []),
-                ...newRows,
-              ];
-            }
-            return merged;
-          });
-        }
+      if (workoutExercises.length === 0) {
+        setShowExercisePicker(true);
       }
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
@@ -991,6 +1053,22 @@ export default function WorkoutPage() {
       setExerciseLoadError(true);
     }
   }
+
+  async function loadExerciseCatalogForPicker() {
+    try {
+      const list = await exercisesApi.getExercises();
+      setExercises(list);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        return;
+      }
+    }
+  }
+
+  useEffect(() => {
+    if (!showExercisePicker || exercises.length > 0) return;
+    void loadExerciseCatalogForPicker();
+  }, [showExercisePicker, exercises.length]);
 
   async function completeSession() {
     setCompleting(true);
@@ -1010,16 +1088,23 @@ export default function WorkoutPage() {
 
   // ── Helpers ──
 
+  function defaultEmptyRows(exerciseId: string): SetRow[] {
+    const targetSets =
+      useSessionStore.getState().prescriptions[exerciseId]?.setTarget ?? 3;
+    return Array.from({ length: targetSets }, (_, i) => ({
+      id: `${exerciseId}-${i + 1}`,
+      weight: '',
+      reps: '',
+      completed: false,
+    }));
+  }
+
   function ensureRows(exerciseId: string) {
     setSetRows((prev) => {
       if (prev[exerciseId]?.length) return prev;
       return {
         ...prev,
-        [exerciseId]: [
-          { id: `${exerciseId}-1`, weight: '', reps: '', completed: false },
-          { id: `${exerciseId}-2`, weight: '', reps: '', completed: false },
-          { id: `${exerciseId}-3`, weight: '', reps: '', completed: false },
-        ],
+        [exerciseId]: defaultEmptyRows(exerciseId),
       };
     });
   }
@@ -1042,9 +1127,13 @@ export default function WorkoutPage() {
     const row = rows[rowIndex];
     if (!row || !row.weight || !row.reps || row.completed) return;
     try {
+      const completedCount = (
+        useSessionStore.getState().sets[exerciseId] ?? []
+      ).length;
+      const setNumber = completedCount + 1;
       const res = await workoutsApi.addSet(workoutId, {
         exerciseId,
-        setNumber: rowIndex + 1,
+        setNumber,
         weight: parseFloat(row.weight),
         reps: parseInt(row.reps, 10),
       });
@@ -1273,6 +1362,7 @@ export default function WorkoutPage() {
         workoutId,
         exerciseId: originalExerciseId,
         substituteExerciseId,
+        jointAffected: activeSubstitution.affectedJoint ?? 'UNKNOWN',
       });
 
       setDismissedSubstitutionByExercise((current) => ({
@@ -1582,11 +1672,7 @@ export default function WorkoutPage() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
           {dayExercises.map((exercise) => {
             const rows = setRows[exercise.id] ?? (() => {
-              const defaultRows = [
-                { id: `${exercise.id}-1`, weight: '', reps: '', completed: false },
-                { id: `${exercise.id}-2`, weight: '', reps: '', completed: false },
-                { id: `${exercise.id}-3`, weight: '', reps: '', completed: false },
-              ];
+              const defaultRows = defaultEmptyRows(exercise.id);
               // ensure rows are initialized
               setTimeout(() => ensureRows(exercise.id), 0);
               return defaultRows;
