@@ -1,67 +1,127 @@
 'use client';
 
-import { Suspense, useEffect, useRef, useState, type CSSProperties } from 'react';
+import { Suspense, useCallback, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import AppHeader from '@/components/AppHeader';
+import {
+  MesocycleExplainerInline,
+  MESO_EXPLAINER_STORAGE_KEY,
+} from '@/components/MesocycleExplainer';
 import { mesocyclesApi } from '@/lib/api/mesocycles';
-import { ApiError } from '@/lib/api/client';
 import { templatesApi, type TemplateDetail, type TemplateListItem } from '@/lib/api/templates';
-import { AlertTriangle, Info, Search, X } from 'lucide-react';
-import { exercisesApi } from '@/lib/api/exercises';
+import { ApiError } from '@/lib/api/client';
 
-type BuildMode = 'USE_TEMPLATE' | 'CREATE_FROM_SCRATCH';
-type ScratchExercise = { id: string; name: string; primaryMuscle?: string };
-type ScratchDay = { label: string; primaryMuscle: string; exercises: ScratchExercise[] };
-type SplitType =
-  | 'FULL_BODY'
-  | 'PPL'
-  | 'UPPER_LOWER'
-  | 'BODY_PART_SPLIT'
-  | 'POWERBUILDING'
-  | 'CUSTOM';
+const STATIC_FILTERS = ['All Goals', 'Hypertrophy', 'Strength', 'Powerbuilding', 'Full Body'];
 
-type TemplateCard = TemplateListItem & { detail?: TemplateDetail | null };
-
-const SPLIT_LABELS: Record<SplitType, string> = {
-  FULL_BODY: 'Full Body',
-  PPL: 'Push Pull Legs',
-  UPPER_LOWER: 'Upper Lower',
-  BODY_PART_SPLIT: 'Bodybuilding / Hypertrophy',
-  POWERBUILDING: 'Powerbuilding',
-  CUSTOM: 'Custom Split',
+const MATRIX_OPTIONS: Record<string, string[]> = {
+  Experience: ['Any', 'Beginner', 'Intermediate', 'Advanced'],
+  Duration: ['Any', '≤6w', '6–8w', '8–12w', '12w+'],
+  'Days/Week': ['Any', '3', '4', '5', '6+'],
+  Equipment: ['Any', 'Full Gym', 'Minimal', 'Bodyweight'],
 };
 
-const sectionLabelStyle: CSSProperties = {
-  display: 'block',
-  fontFamily: 'Manrope, sans-serif',
-  fontSize: '0.57rem',
-  letterSpacing: '0.22em',
-  textTransform: 'uppercase',
-  color: '#8e909c',
-  fontWeight: 700,
-};
-//defining  styling 
-const inputFieldStyle: CSSProperties = {
-  width: '100%',
-  padding: '12px 14px',
-  backgroundColor: '#161820',
-  border: '1px solid #3a3c44',
-  borderRadius: '12px',
-  color: '#e2e2e8',
-  fontFamily: 'Manrope, sans-serif',
-  fontSize: '14px',
+const STATIC_MODAL_PHASES = [
+  { label: 'Phase 01 [W1–3]', title: 'Volume Accumulation', accent: false },
+  { label: 'Phase 02 [W4–6]', title: 'Intensification', accent: false },
+  { label: 'Phase 03 [W7–8]', title: 'Deload & Retest', accent: true },
+];
+
+const C = {
+  primary: '#b1c5ff',
+  secondary: '#d4bbff',
+  tertiary: '#59d8de',
+  surface: '#111318',
+  surfaceLow: '#161820',
+  surfaceContainer: '#1e2026',
+  surfaceHigh: '#282a30',
+  surfaceHighest: '#32343c',
+  outline: '#8e909c',
+  outlineVariant: '#3a3c44',
+  onSurface: '#e2e2e8',
+  onSurfaceVariant: '#c5c6d2',
 };
 
-const primaryGradient = 'linear-gradient(135deg, #b1c5ff 0%, #3a5cbf 100%)';
-
-const DEFAULT_SPLIT_DAYS: Record<SplitType, string[]> = {
-  FULL_BODY: ['Day 1 - Full Body', 'Day 2 - Full Body', 'Day 3 - Full Body'],
-  PPL: ['Day 1 - Push', 'Day 2 - Pull', 'Day 3 - Legs', 'Day 4 - Push', 'Day 5 - Pull'],
-  UPPER_LOWER: ['Day 1 - Upper', 'Day 2 - Lower', 'Day 3 - Upper', 'Day 4 - Lower'],
-  BODY_PART_SPLIT: ['Day 1 - Chest', 'Day 2 - Back', 'Day 3 - Shoulders', 'Day 4 - Legs', 'Day 5 - Arms'],
-  POWERBUILDING: ['Day 1 - Upper Strength', 'Day 2 - Lower Strength', 'Day 3 - Upper Volume', 'Day 4 - Lower Volume'],
-  CUSTOM: ['Day 1'],
+const ACCENT: Record<string, string> = {
+  primary: C.primary,
+  secondary: C.secondary,
+  tertiary: C.tertiary,
 };
+
+const DAY_COLORS = [C.primary, C.tertiary, C.secondary, '#a2e7ff'];
+
+const DURATION_PRESETS = [4, 8] as const;
+const MIN_CUSTOM_WEEKS = 2;
+const MAX_CUSTOM_WEEKS = 16;
+
+function rgb(hex: string) {
+  const r = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  return r ? `${parseInt(r[1], 16)},${parseInt(r[2], 16)},${parseInt(r[3], 16)}` : '177,197,255';
+}
+
+type Template = {
+  id: string;
+  name: string;
+  tag: string;
+  badge: string | null;
+  goal: string;
+  experience: string;
+  durationWeeks: number;
+  frequencyPerWeek: number;
+  splitType: string;
+  accentKey: 'primary' | 'secondary' | 'tertiary';
+  description: string;
+  days: string[];
+  stats: Array<{ label: string; value: string }>;
+  featured: boolean;
+};
+
+function mapApiTemplate(template: TemplateListItem): Template {
+  const accentKey =
+    template.goal.toLowerCase().includes('strength')
+      ? 'secondary'
+      : template.goal.toLowerCase().includes('power')
+        ? 'tertiary'
+        : 'primary';
+
+  return {
+    id: template.id,
+    name: template.name,
+    tag: template.primaryFocus,
+    badge: template.badge,
+    goal: template.goal,
+    experience: template.level,
+    durationWeeks: parseInt(template.durationWeeks.split('–')[0] ?? template.durationWeeks, 10) || 8,
+    frequencyPerWeek: template.daysPerWeek,
+    splitType: template.splitStyle,
+    accentKey,
+    description: template.difficultyWarning
+      ? `${template.progressionType}. ${template.difficultyWarning}`
+      : `${template.progressionType} template.`,
+    days: template.days,
+    stats: template.stats,
+    featured: template.featured,
+  };
+}
+
+function parseTemplateDurationWeeks(template: Template): number {
+  return template.durationWeeks;
+}
+
+function sessionCount(daysPerWeek: number, totalWeeks: number): number {
+  return daysPerWeek * totalWeeks;
+}
+
+function derivePreviewRpe(repRangeMin: number, repRangeMax: number): string {
+  const mid = (repRangeMin + repRangeMax) / 2;
+  if (mid <= 6) return '8.5';
+  if (mid <= 9) return '8';
+  if (mid <= 12) return '7.5';
+  return '7';
+}
+
+function clampWeeks(value: number): number {
+  return Math.min(MAX_CUSTOM_WEEKS, Math.max(MIN_CUSTOM_WEEKS, value));
+}
 
 export default function NewMesocyclePage() {
   return (
@@ -71,569 +131,746 @@ export default function NewMesocyclePage() {
   );
 }
 
-function parseTemplateDurationWeeks(template: TemplateCard): number {
-  const raw = template.durationWeeks as string | number | undefined;
-  const str = raw === undefined || raw === null ? '8' : String(raw);
-  const first = str.split(/[–-]/)[0]?.trim() ?? str;
-  const n = Number.parseInt(first, 10);
-  return Number.isNaN(n) ? 8 : n;
-}
-
 function MesocyclesNewInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const urlTemplateIdParam = searchParams.get('templateId');
-  const [loading, setLoading] = useState(false);
-  const [buildMode, setBuildMode] = useState<BuildMode>('USE_TEMPLATE');
-  const [selectedTemplate, setSelectedTemplate] = useState<TemplateCard | null>(null);
-  const [infoTemplate, setInfoTemplate] = useState<TemplateCard | null>(null);
-  const [templates, setTemplates] = useState<TemplateCard[]>([]);
-  const [formData, setFormData] = useState({
-    name: '',
-    totalWeeks: 4,
-    templateId: '',
+  const urlTemplateId = searchParams.get('templateId');
+
+  const [step, setStep] = useState<'choose' | 'configure'>('choose');
+  const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null);
+  const [modalTemplate, setModalTemplate] = useState<Template | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [templates, setTemplates] = useState<Template[]>([]);
+  const [search, setSearch] = useState('');
+  const [activeFilter, setActiveFilter] = useState('All Goals');
+  const [matrixFilters, setMatrixFilters] = useState<Record<string, string>>({
+    Experience: 'Any',
+    Duration: 'Any',
+    'Days/Week': 'Any',
+    Equipment: 'Any',
   });
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [blockName, setBlockName] = useState('');
+  const [totalWeeks, setTotalWeeks] = useState(8);
+  const [durationMode, setDurationMode] = useState<'preset' | 'custom'>('preset');
+  const [showCustomStepper, setShowCustomStepper] = useState(false);
+  const [showExplainer, setShowExplainer] = useState(false);
+  const [templateDetailsCache, setTemplateDetailsCache] = useState<Record<string, TemplateDetail>>({});
+  const [detailLoadingId, setDetailLoadingId] = useState<string | null>(null);
   const [recommendationRationale, setRecommendationRationale] = useState<string | null>(null);
-  const [splitType, setSplitType] = useState<SplitType>('UPPER_LOWER');
-  const [customDaysCount, setCustomDaysCount] = useState(3);
-  const [scratchDays, setScratchDays] = useState<ScratchDay[]>(
-    DEFAULT_SPLIT_DAYS.UPPER_LOWER.map((label) => ({ label, primaryMuscle: 'GENERAL', exercises: [] })),
-  );
-  const [pickerDayIndex, setPickerDayIndex] = useState<number | null>(null);
-  const [categoryFilter, setCategoryFilter] = useState('ALL');
-  const [exerciseQuery, setExerciseQuery] = useState('');
-  const [allExercises, setAllExercises] = useState<Array<{ id: string; name: string; primaryMuscle?: string }>>([]);
-  const [urlPreselectedTemplateId, setUrlPreselectedTemplateId] = useState<string | null>(null);
-  const selectedTemplateCardRef = useRef<HTMLDivElement | null>(null);
 
-  function applyTemplateSelection(template: TemplateCard) {
-    const durationWeeks = parseTemplateDurationWeeks(template);
-    setSelectedTemplate(template);
-    setFormData((prev) => ({
-      ...prev,
-      templateId: template.id,
-      totalWeeks: Number.isNaN(durationWeeks) ? prev.totalWeeks : durationWeeks,
-    }));
-    setBuildMode('USE_TEMPLATE');
-  }
-
-  useEffect(() => {
-    loadRecommendations();
-    loadExercises();
+  const dismissExplainer = useCallback(() => {
+    localStorage.setItem(MESO_EXPLAINER_STORAGE_KEY, 'true');
+    setShowExplainer(false);
   }, []);
 
-  async function loadRecommendations() {
-    try {
-      const [recommendedRes, templatesRes] = await Promise.all([
-        templatesApi.recommended(),
-        templatesApi.all(),
-      ]);
-      const allTemplates = Array.isArray(templatesRes.data)
-        ? (templatesRes.data as TemplateListItem[])
-        : [];
-      setTemplates(allTemplates);
-      const recommendedTemplate = (recommendedRes.data?.recommended ??
-        null) as TemplateDetail | null;
-      const rationale = (recommendedRes.data?.rationale ?? null) as string | null;
-      setRecommendationRationale(rationale);
-      const urlTemplateIdAfterFetch =
-        typeof window !== 'undefined'
-          ? new URL(window.location.href).searchParams.get('templateId')
-          : urlTemplateIdParam;
-      if (!urlTemplateIdAfterFetch && recommendedTemplate) {
-        applyTemplateSelection(recommendedTemplate);
-      }
-    } catch (err) {
-      if (err instanceof ApiError && err.status === 401) {
-        return;
-      }
-      const errorMsg = err instanceof Error ? err.message : JSON.stringify(err);
-      console.error('Failed to load recommendations:', errorMsg);
-    }
-  }
+  useEffect(() => {
+    setShowExplainer(localStorage.getItem(MESO_EXPLAINER_STORAGE_KEY) !== 'true');
+  }, []);
 
   useEffect(() => {
-    if (!urlTemplateIdParam || templates.length === 0) return;
-    const match = templates.find((t) => t.id === urlTemplateIdParam);
-    if (!match) return;
-    const durationWeeks = parseTemplateDurationWeeks(match);
-    setSelectedTemplate(match);
-    setFormData((prev) => ({
-      ...prev,
-      name: match.name || prev.name,
-      templateId: match.id,
-      totalWeeks: Number.isNaN(durationWeeks) ? prev.totalWeeks : durationWeeks,
-    }));
-    setBuildMode('USE_TEMPLATE');
-    setUrlPreselectedTemplateId(match.id);
-  }, [urlTemplateIdParam, templates]);
+    if (!modalTemplate) return;
+    const templateId = modalTemplate.id;
+    if (templateDetailsCache[templateId]) return;
 
-  useEffect(() => {
-    if (!urlPreselectedTemplateId || selectedTemplate?.id !== urlPreselectedTemplateId) return;
-    selectedTemplateCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  }, [selectedTemplate?.id, urlPreselectedTemplateId]);
-
-  async function loadExercises() {
-    try {
-      const list = await exercisesApi.getExercises();
-      setAllExercises(list);
-    } catch (err) {
-      if (err instanceof ApiError && err.status === 401) {
-        setAllExercises([]);
-        return;
-      }
-      console.error('Failed to load exercises:', err);
-    }
-  }
-
-  useEffect(() => {
-    if (splitType === 'CUSTOM') {
-      setScratchDays(Array.from({ length: customDaysCount }).map((_, index) => ({
-        label: `Day ${index + 1}`,
-        primaryMuscle: 'GENERAL',
-        exercises: [],
-      })));
-      return;
-    }
-    setScratchDays(DEFAULT_SPLIT_DAYS[splitType].map((label) => ({ label, primaryMuscle: 'GENERAL', exercises: [] })));
-  }, [splitType, customDaysCount]);
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!formData.name.trim()) return;
-
-    setLoading(true);
-    try {
-      const finalTemplateId =
-        buildMode === 'USE_TEMPLATE'
-          ? (selectedTemplate?.id || formData.templateId || undefined)
-          : undefined;
-      const result = await mesocyclesApi.generate({
-        name: formData.name,
-        totalWeeks: formData.totalWeeks,
-        templateId: finalTemplateId,
+    let cancelled = false;
+    setDetailLoadingId(templateId);
+    templatesApi.findOne(templateId)
+      .then((res) => {
+        if (cancelled) return;
+        setTemplateDetailsCache((prev) => ({ ...prev, [templateId]: res.data as TemplateDetail }));
+      })
+      .catch(() => { /* modal falls back to day labels only */ })
+      .finally(() => {
+        if (!cancelled) setDetailLoadingId(null);
       });
-      const scratchPayload =
-        buildMode === 'CREATE_FROM_SCRATCH'
-          ? {
-            splitType,
-            weeklyStructure: scratchDays.map((day) => ({
-              label: day.label,
-              primaryMuscle: day.primaryMuscle,
-              exercises: day.exercises.map((item) => item.name),
-            })),
-          }
-          : undefined;
-      if (typeof window !== 'undefined' && scratchPayload) {
-        sessionStorage.setItem(`mesocycle-draft:${result.data.id}`, JSON.stringify(scratchPayload));
-      }
-      router.push('/mesocycles');
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- fetch once per modal template id
+  }, [modalTemplate?.id]);
+
+  const closeModal = useCallback(() => setModalTemplate(null), []);
+
+  function cycleMatrix(label: string) {
+    const options = MATRIX_OPTIONS[label] ?? ['Any'];
+    const current = matrixFilters[label] ?? 'Any';
+    const next = options[(options.indexOf(current) + 1) % options.length] ?? 'Any';
+    setMatrixFilters((prev) => ({ ...prev, [label]: next }));
+  }
+
+  function selectPresetWeeks(w: number) {
+    setDurationMode('preset');
+    setShowCustomStepper(false);
+    setTotalWeeks(w);
+  }
+
+  function openCustomStepper() {
+    setShowCustomStepper(true);
+    setDurationMode('custom');
+    const initial = DURATION_PRESETS.includes(totalWeeks as typeof DURATION_PRESETS[number]) ? 10 : clampWeeks(totalWeeks);
+    setTotalWeeks(initial);
+  }
+
+  function stepCustomWeeks(delta: number) {
+    setDurationMode('custom');
+    setTotalWeeks((prev) => clampWeeks(prev + delta));
+    setShowCustomStepper(false);
+  }
+
+  function dismissCustomWeeks() {
+    setDurationMode('preset');
+    setShowCustomStepper(false);
+    setTotalWeeks(8);
+  }
+
+  function selectTemplate(template: Template) {
+    setSelectedTemplate(template);
+    setBlockName(template.name);
+    setTotalWeeks(parseTemplateDurationWeeks(template));
+    setDurationMode('preset');
+    setShowCustomStepper(false);
+    setStep('configure');
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    Promise.all([templatesApi.recommended(), templatesApi.all()])
+      .then(([recRes, allRes]) => {
+        if (cancelled) return;
+        const list = Array.isArray(allRes.data) ? (allRes.data as TemplateListItem[]) : [];
+        setTemplates(list.map(mapApiTemplate));
+        const rationale = (recRes.data?.rationale ?? null) as string | null;
+        setRecommendationRationale(rationale);
+      })
+      .catch(() => {
+        if (!cancelled) setTemplates([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!urlTemplateId || templates.length === 0) return;
+    const match = templates.find((t) => t.id === urlTemplateId);
+    if (match) selectTemplate(match);
+  }, [urlTemplateId, templates]);
+
+  async function handleCreate() {
+    if (!selectedTemplate || !blockName.trim() || submitting) return;
+    setSubmitting(true);
+    try {
+      await mesocyclesApi.generate({
+        name: blockName.trim(),
+        totalWeeks,
+        templateId: selectedTemplate.id,
+      });
+      router.push('/dashboard');
     } catch (err) {
-      if (err instanceof ApiError && err.status === 401) {
-        return;
-      }
+      if (err instanceof ApiError && err.status === 401) return;
       console.error('Failed to create mesocycle:', err);
-      alert('Failed to create mesocycle');
+      alert('Failed to create block');
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
   }
 
-  const showSubmitButton = !!selectedTemplate;
+  const filtered = templates
+    .filter((t) => activeFilter === 'All Goals' || t.goal.toLowerCase().includes(activeFilter.toLowerCase()))
+    .filter((t) => search.trim().length === 0 || `${t.name} ${t.tag} ${t.goal}`.toLowerCase().includes(search.toLowerCase()))
+    .filter((t) => {
+      const exp = matrixFilters['Experience'] ?? 'Any';
+      if (exp !== 'Any' && !t.experience.toLowerCase().includes(exp.toLowerCase())) return false;
+      const dur = matrixFilters['Duration'] ?? 'Any';
+      if (dur !== 'Any') {
+        const w = t.durationWeeks;
+        if (dur === '≤6w' && w > 6) return false;
+        if (dur === '6–8w' && (w < 6 || w > 8)) return false;
+        if (dur === '8–12w' && (w <= 8 || w > 12)) return false;
+        if (dur === '12w+' && w <= 12) return false;
+      }
+      const days = matrixFilters['Days/Week'] ?? 'Any';
+      if (days !== 'Any') {
+        const freq = t.frequencyPerWeek;
+        if (days === '6+' ? freq < 6 : freq !== parseInt(days, 10)) return false;
+      }
+      return true;
+    });
 
-  return (
-    <div style={{ minHeight: '100dvh', backgroundColor: '#111318', paddingBottom: '96px' }}>
-      <AppHeader
-        title="Create Block"
-        showBack
-        backHref="/mesocycles"
-      />
+  const featured = filtered.find((t) => t.featured) ?? filtered[0];
+  const rest = filtered.filter((t) => t.id !== featured?.id);
 
-      <div style={{ maxWidth: '480px', margin: '0 auto', padding: '0 20px' }}>
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+  if (step === 'configure' && selectedTemplate) {
+    const sessions = sessionCount(selectedTemplate.frequencyPerWeek, totalWeeks);
+    return (
+      <div style={{ minHeight: '100dvh', backgroundColor: C.surface, paddingBottom: 96 }}>
+        <AppHeader title="Configure Block" showBack backHref="/mesocycles" />
+        <div style={{ maxWidth: 600, margin: '0 auto', padding: '0 20px' }}>
+          <div style={{
+            background: C.surfaceContainer,
+            border: `1px solid ${C.outlineVariant}`,
+            borderLeft: `3px solid ${ACCENT[selectedTemplate.accentKey]}`,
+            borderRadius: 16,
+            padding: '16px 18px',
+            marginBottom: 24,
+          }}>
+            <p style={{ margin: '0 0 4px', fontSize: '0.57rem', letterSpacing: '0.2em', textTransform: 'uppercase', color: ACCENT[selectedTemplate.accentKey], fontWeight: 700 }}>
+              {selectedTemplate.tag}
+            </p>
+            <h2 style={{ margin: '0 0 8px', fontFamily: 'Space Grotesk, sans-serif', fontWeight: 900, fontSize: 20, letterSpacing: '-0.04em', color: C.onSurface }}>
+              {selectedTemplate.name}
+            </h2>
+            <p style={{ margin: '0 0 12px', fontSize: 13, color: C.onSurfaceVariant, fontWeight: 500 }}>
+              {selectedTemplate.frequencyPerWeek} days/week · {selectedTemplate.experience}
+            </p>
+            <button
+              type="button"
+              onClick={() => setStep('choose')}
+              style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'Manrope, sans-serif', fontSize: 12, fontWeight: 700, color: C.primary }}
+            >
+              Change program →
+            </button>
+          </div>
 
-          {/* Name */}
-          <div>
-            <label style={{ ...sectionLabelStyle, marginBottom: '8px' }}>
+          <div style={{ marginBottom: 20 }}>
+            <label style={{ display: 'block', fontSize: '0.57rem', letterSpacing: '0.22em', textTransform: 'uppercase', color: C.outline, fontWeight: 700, marginBottom: 8 }}>
               Block Name
             </label>
             <input
               type="text"
-              value={formData.name}
-              onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-              placeholder="e.g., Strength Phase 1"
-              style={inputFieldStyle}
-              required
+              value={blockName}
+              onChange={(e) => setBlockName(e.target.value)}
+              style={{
+                width: '100%',
+                boxSizing: 'border-box',
+                background: C.surfaceLow,
+                border: `1px solid ${C.outlineVariant}`,
+                borderRadius: 12,
+                padding: '14px 16px',
+                color: C.onSurface,
+                fontFamily: 'Manrope, sans-serif',
+                fontSize: 13,
+                outline: 'none',
+              }}
             />
           </div>
 
-          {/* Duration */}
-          <div>
-            <label style={{ ...sectionLabelStyle, marginBottom: '8px' }}>
-              Duration (weeks)
+          <div style={{ marginBottom: 20 }}>
+            <label style={{ display: 'block', fontSize: '0.57rem', letterSpacing: '0.22em', textTransform: 'uppercase', color: C.outline, fontWeight: 700, marginBottom: 8 }}>
+              Duration
             </label>
-            <select
-              value={formData.totalWeeks}
-              onChange={(e) => setFormData(prev => ({ ...prev, totalWeeks: parseInt(e.target.value) }))}
-              style={inputFieldStyle}
-            >
-              <option value={4}>4 weeks</option>
-              <option value={6}>6 weeks</option>
-              <option value={8}>8 weeks</option>
-              <option value={12}>12 weeks</option>
-            </select>
+            <DurationPicker
+              totalWeeks={totalWeeks}
+              durationMode={durationMode}
+              showCustomStepper={showCustomStepper}
+              onSelectPreset={selectPresetWeeks}
+              onOpenCustom={openCustomStepper}
+              onStepCustom={stepCustomWeeks}
+              onDismissCustom={dismissCustomWeeks}
+            />
           </div>
 
-          <div>
-            <label style={{ ...sectionLabelStyle, marginBottom: '8px' }}>
-              Build Mode
-            </label>
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 1fr',
-              gap: '4px',
-              padding: '4px',
-              backgroundColor: '#161820',
-              border: '1px solid #3a3c44',
-              borderRadius: '14px',
-            }}>
-              <button
-                type="button"
-                onClick={() => setBuildMode('USE_TEMPLATE')}
-                style={{
-                  padding: '12px 16px',
-                  borderRadius: '12px',
-                  border: buildMode === 'USE_TEMPLATE' ? 'none' : '1px solid #3a3c44',
-                  background: buildMode === 'USE_TEMPLATE' ? primaryGradient : 'transparent',
-                  color: buildMode === 'USE_TEMPLATE' ? '#05080f' : '#c5c6d2',
-                  fontFamily: buildMode === 'USE_TEMPLATE' ? "'Space Grotesk', sans-serif" : 'Manrope, sans-serif',
-                  fontWeight: buildMode === 'USE_TEMPLATE' ? 900 : 700,
-                  fontSize: '13px',
-                  cursor: 'pointer',
-                  width: '100%',
-                }}
-              >
-                Use Template
-              </button>
-              <button
-                type="button"
-                onClick={() => setBuildMode('CREATE_FROM_SCRATCH')}
-                style={{
-                  padding: '12px 16px',
-                  borderRadius: '12px',
-                  border: buildMode === 'CREATE_FROM_SCRATCH' ? 'none' : '1px solid #3a3c44',
-                  background: buildMode === 'CREATE_FROM_SCRATCH' ? primaryGradient : 'transparent',
-                  color: buildMode === 'CREATE_FROM_SCRATCH' ? '#05080f' : '#c5c6d2',
-                  fontFamily: buildMode === 'CREATE_FROM_SCRATCH' ? "'Space Grotesk', sans-serif" : 'Manrope, sans-serif',
-                  fontWeight: buildMode === 'CREATE_FROM_SCRATCH' ? 900 : 700,
-                  fontSize: '13px',
-                  cursor: 'pointer',
-                  width: '100%',
-                }}
-              >
-                Create From Scratch
-              </button>
-            </div>
+          <div style={{
+            background: C.surfaceLow,
+            border: `1px solid ${C.outlineVariant}`,
+            borderRadius: 12,
+            padding: '12px 14px',
+            marginBottom: 24,
+          }}>
+            <p style={{ margin: 0, fontFamily: 'Manrope, sans-serif', fontSize: 13, fontWeight: 500, color: C.onSurfaceVariant }}>
+              This will create <strong style={{ color: C.onSurface }}>{sessions} sessions</strong> over <strong style={{ color: C.onSurface }}>{totalWeeks} weeks</strong>
+            </p>
           </div>
 
-          {buildMode === 'USE_TEMPLATE' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              <p className="label-sm" style={{ color: '#8e909c' }}>
-                Original templates are locked. Selecting one creates an editable copy (exercise + sets only).
-              </p>
-              {templates.map((template) => {
-                const selected = selectedTemplate?.id === template.id;
-                const focusColor = selected ? '#59d8de' : '#b1c5ff';
-                const splitTypeValue =
-                  (template.splitStyle as SplitType) in SPLIT_LABELS
-                    ? (template.splitStyle as SplitType)
-                    : null;
-                return (
-                  <div
-                    key={template.id}
-                    ref={selected ? selectedTemplateCardRef : null}
-                    style={{
-                      position: 'relative',
-                      backgroundColor: '#1e2026',
-                      border: selected ? '1.5px solid var(--primary)' : '1px solid #3a3c44',
-                      borderLeft: `3px solid ${focusColor}`,
-                      borderRadius: '16px',
-                      overflow: 'hidden',
-                      boxShadow: 'none',
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'start', justifyContent: 'space-between', gap: '8px', padding: '16px 16px 14px 18px' }}>
-                      <button type="button" onClick={() => applyTemplateSelection(template)} style={{ flex: 1, background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left', padding: 0 }}>
-                        <p style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 'clamp(1.1rem,4vw,1.3rem)', color: '#e2e2e8', fontWeight: 800, letterSpacing: '-0.035em' }}>{template.name}</p>
-                        <p style={{ fontFamily: 'Manrope', fontSize: '0.75rem', color: '#8e909c' }}>
-                          {(splitTypeValue ? SPLIT_LABELS[splitTypeValue] : template.splitStyleLabel)} • {template.daysPerWeek} days/week • {template.durationWeeks} weeks
-                        </p>
-                        <p style={{ fontFamily: 'Manrope', fontSize: '0.7rem', color: '#8e909c', marginTop: '6px' }}>
-                          {template.goal} · {template.level}
-                        </p>
-                        {template.difficultyWarning && (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '8px' }}>
-                            <AlertTriangle size={12} color="#ffb4ab" />
-                            <span style={{ fontFamily: 'Manrope', fontSize: '0.68rem', color: '#ffb4ab' }}>
-                              {template.difficultyWarning}
-                            </span>
-                          </div>
-                        )}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          try {
-                            const res = await templatesApi.findOne(template.id);
-                            setInfoTemplate({ ...template, detail: res.data as TemplateDetail });
-                          } catch (err) {
-                            if (err instanceof ApiError && err.status === 401) return;
-                            setInfoTemplate(template);
-                          }
-                        }}
-                        style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: '4px', flexShrink: 0 }}
-                      >
-                        <Info size={16} color="#8e909c" />
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-              {recommendationRationale && (
-                <p style={{ fontFamily: 'Manrope', fontSize: '0.75rem', color: '#8e909c' }}>
-                  Recommendation insight: {recommendationRationale}
-                </p>
-              )}
-            </div>
-          )}
+          <button
+            type="button"
+            onClick={handleCreate}
+            disabled={submitting || !blockName.trim()}
+            style={{
+              width: '100%',
+              padding: '15px 0',
+              borderRadius: 14,
+              border: 'none',
+              background: submitting ? C.surfaceHigh : `linear-gradient(135deg, ${C.primary} 0%, #3a5cbf 100%)`,
+              color: submitting ? C.outline : '#05080f',
+              fontFamily: 'Space Grotesk, sans-serif',
+              fontWeight: 900,
+              fontSize: 15,
+              cursor: submitting || !blockName.trim() ? 'not-allowed' : 'pointer',
+              opacity: submitting ? 0.7 : 1,
+            }}
+          >
+            {submitting ? 'Creating...' : 'Create Block →'}
+          </button>
+        </div>
+      </div>
+    );
+  }
 
-          {buildMode === 'CREATE_FROM_SCRATCH' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div>
-                <label style={{ ...sectionLabelStyle, marginBottom: '8px' }}>
-                  Split Type
-                </label>
-                <select
-                  value={splitType}
-                  onChange={(e) => setSplitType(e.target.value as SplitType)}
-                  style={inputFieldStyle}
-                >
-                  {Object.entries(SPLIT_LABELS).map(([value, label]) => (
-                    <option key={value} value={value}>{label}</option>
-                  ))}
-                </select>
-              </div>
+  return (
+    <div style={{ minHeight: '100dvh', backgroundColor: C.surface, color: C.onSurface, fontFamily: 'Manrope, sans-serif', paddingBottom: 110 }}>
+      <AppHeader title="Choose Program" showBack backHref="/mesocycles" />
 
-              <div style={{ backgroundColor: '#1e2026', border: '1px solid #3a3c44', borderRadius: '16px', padding: '16px' }}>
-                <p style={{ ...sectionLabelStyle, marginBottom: '10px', marginTop: 0 }}>Weekly Structure</p>
-                {splitType === 'CUSTOM' && (
-                  <p style={{ fontFamily: 'Manrope', fontSize: '0.72rem', color: '#8e909c', marginBottom: '8px' }}>
-                    Barebones setup. Add up to 6 days and assign focus per day.
-                  </p>
-                )}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                  {scratchDays.map((day, dayIndex) => (
-                    <div
-                      key={`${day.label}-${dayIndex}`}
-                      style={{
-                        position: 'relative',
-                        backgroundColor: '#161820',
-                        borderLeft: '3px solid #59d8de',
-                        borderRadius: '12px',
-                        padding: '12px 14px',
-                      }}
-                    >
-                      <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 0, opacity: 0, pointerEvents: 'none' }} />
-                      <div style={{ marginLeft: 0 }}>
-                        <p style={{ fontFamily: 'Manrope', fontSize: '0.78rem', color: '#e2e2e8', fontWeight: 600 }}>{day.label}</p>
-                        <select
-                          value={day.primaryMuscle}
-                          onChange={(e) => {
-                            const primaryMuscle = e.target.value;
-                            setScratchDays((prev) => prev.map((current, index) => (
-                              index === dayIndex
-                                ? { ...current, primaryMuscle, label: buildDayLabel(dayIndex, primaryMuscle, current.exercises) }
-                                : current
-                            )));
-                          }}
-                          style={{ ...inputFieldStyle, marginTop: '6px' }}
-                        >
-                          <option value="GENERAL">General</option>
-                          <option value="CHEST">Chest</option>
-                          <option value="BACK">Back</option>
-                          <option value="SHOULDERS">Shoulders</option>
-                          <option value="QUADS">Quads</option>
-                          <option value="GLUTES">Glutes</option>
-                        </select>
-                      </div>
-                      <p style={{ fontFamily: 'Manrope', fontSize: '0.7rem', color: '#8e909c', marginTop: '4px' }}>
-                        Exercises: {day.exercises.length > 0 ? day.exercises.map((item) => item.name).join(', ') : 'None yet'}
-                      </p>
-                      <button type="button" className="btn-ghost" style={{ marginTop: '8px' }} onClick={() => setPickerDayIndex(dayIndex)}>
-                        Add Exercise
-                      </button>
-                    </div>
-                  ))}
-                </div>
-                <button
-                  type="button"
-                  style={{
-                    marginTop: '10px',
-                    width: '100%',
-                    padding: '12px 16px',
-                    background: 'transparent',
-                    border: '1px solid #3a3c44',
-                    borderRadius: '10px',
-                    color: '#c5c6d2',
-                    fontFamily: 'Manrope, sans-serif',
-                    fontWeight: 700,
-                    fontSize: '13px',
-                    cursor: 'pointer',
-                  }}
-                  onClick={() => {
-                    if (scratchDays.length >= 6) return;
-                    setCustomDaysCount((count) => Math.min(6, count + 1));
-                    setSplitType('CUSTOM');
-                    setScratchDays((prev) => ([
-                      ...prev,
-                      { label: `Day ${prev.length + 1}`, primaryMuscle: 'GENERAL', exercises: [] },
-                    ]));
-                  }}
-                >
-                  + Add Day
-                </button>
-                <p style={{ fontFamily: 'Manrope', fontSize: '0.68rem', color: '#8e909c', marginTop: '6px' }}>
-                  Max 6 days
-                </p>
-              </div>
-            </div>
-          )}
+      <div style={{ maxWidth: 600, margin: '0 auto', padding: '26px 16px 0' }}>
+        {showExplainer && (
+          <MesocycleExplainerInline onDismiss={dismissExplainer} />
+        )}
+        <p style={{ margin: '0 0 6px', color: C.outline, fontSize: '0.57rem', letterSpacing: '0.24em', textTransform: 'uppercase', fontWeight: 700 }}>
+          Programme Selection
+        </p>
+        <h1 style={{ fontFamily: 'Space Grotesk, sans-serif', fontWeight: 900, fontSize: 'clamp(1.85rem,6vw,2.4rem)', letterSpacing: '-0.045em', lineHeight: 1.05, color: C.onSurface, margin: '0 0 10px' }}>
+          Choose your program
+        </h1>
+        <p style={{ color: C.onSurfaceVariant, fontSize: 13, lineHeight: 1.6, fontWeight: 500, margin: '0 0 22px' }}>
+          Proven split architectures — each one seeds a full training block with auto-generated volume targets and progression logic.
+        </p>
 
-          {/* Submit */}
-          {showSubmitButton && (
-            <div>
-              <button
-                type="submit"
-                disabled={loading || !formData.name.trim()}
-                style={{
-                  width: '100%',
-                  padding: '15px 0',
-                  background: loading ? '#444650' : primaryGradient,
-                  border: 'none',
-                  borderRadius: '14px',
-                  color: loading ? '#8e909c' : '#05080f',
-                  fontFamily: "'Space Grotesk', sans-serif",
-                  fontSize: '15px',
-                  fontWeight: 900,
-                  cursor: loading ? 'not-allowed' : 'pointer',
-                  marginTop: '16px',
-                }}
-              >
-                {loading ? 'Creating...' : 'Create Block'}
+        <div style={{ position: 'relative', marginBottom: 14 }}>
+          <span style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)' }}>
+            <SearchIcon size={16} color={C.outline} />
+          </span>
+          <input
+            placeholder="Search programs…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            style={{
+              width: '100%',
+              boxSizing: 'border-box',
+              background: C.surfaceLow,
+              border: `1px solid ${C.outlineVariant}`,
+              borderRadius: 12,
+              padding: '12px 14px 12px 40px',
+              color: C.onSurface,
+              fontFamily: 'Manrope, sans-serif',
+              fontSize: 14,
+              outline: 'none',
+            }}
+          />
+        </div>
+
+        <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4, marginBottom: 12 }}>
+          {STATIC_FILTERS.map((label) => {
+            const active = label === activeFilter;
+            return (
+              <button key={label} onClick={() => setActiveFilter(label)} style={{
+                flexShrink: 0,
+                padding: '7px 16px',
+                borderRadius: 100,
+                border: active ? 'none' : `1px solid ${C.outlineVariant}`,
+                background: active ? C.primary : 'transparent',
+                color: active ? '#05080f' : C.onSurfaceVariant,
+                fontSize: '0.72rem',
+                fontFamily: 'Manrope, sans-serif',
+                fontWeight: 700,
+                cursor: 'pointer',
+              }}>
+                {label}
               </button>
-            </div>
-          )}
-        </form>
+            );
+          })}
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8, marginBottom: 28 }}>
+          {Object.keys(MATRIX_OPTIONS).map((label) => {
+            const value = matrixFilters[label] ?? 'Any';
+            const active = value !== 'Any';
+            return (
+              <button key={label} onClick={() => cycleMatrix(label)} style={{
+                background: active ? `rgba(${rgb(C.primary)},0.1)` : C.surfaceLow,
+                borderRadius: 8,
+                padding: '8px 10px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 3,
+                cursor: 'pointer',
+                border: `1px solid ${active ? C.primary : C.outlineVariant}`,
+                textAlign: 'left',
+                width: '100%',
+              }}>
+                <span style={{ fontSize: '0.52rem', letterSpacing: '0.18em', textTransform: 'uppercase', color: active ? C.primary : C.outline, fontWeight: 700 }}>{label}</span>
+                <span style={{ fontSize: 11, fontWeight: 800, color: active ? C.primary : C.tertiary }}>{value}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {loading && <p style={{ textAlign: 'center', color: C.outline, fontSize: 13 }}>Loading programs...</p>}
+
+        {featured && (
+          <FeaturedCard template={featured} onInfo={() => setModalTemplate(featured)} onUse={() => selectTemplate(featured)} rationale={recommendationRationale} />
+        )}
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 12 }}>
+          {rest.map((t) => (
+            <StandardCard
+              key={t.id}
+              template={t}
+              expanded={expandedId === t.id}
+              onToggle={() => setExpandedId(expandedId === t.id ? null : t.id)}
+              onInfo={() => setModalTemplate(t)}
+              onUse={() => selectTemplate(t)}
+            />
+          ))}
+        </div>
+
+        {filtered.length === 0 && !loading && (
+          <p style={{ textAlign: 'center', padding: '60px 0', color: C.outline, fontSize: 13 }}>No programs match this filter.</p>
+        )}
       </div>
 
-      {pickerDayIndex !== null && (
-        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(12,14,18,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px', zIndex: 40 }}>
-          <div style={{ width: '100%', maxWidth: '420px', backgroundColor: '#1e2026', border: '1px solid #3a3c44', borderRadius: '16px', padding: '12px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-              <p style={{ fontFamily: "'Space Grotesk', sans-serif", color: '#e2e2e8', fontSize: '1rem', fontWeight: 600 }}>Add Exercise</p>
-              <button type="button" onClick={() => setPickerDayIndex(null)} style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}><X size={16} color="#8e909c" /></button>
+      {modalTemplate && (
+        <DetailModal
+          template={modalTemplate}
+          totalWeeks={modalTemplate.durationWeeks}
+          detail={templateDetailsCache[modalTemplate.id] ?? null}
+          detailLoading={detailLoadingId === modalTemplate.id}
+          onClose={closeModal}
+          onUse={() => { closeModal(); selectTemplate(modalTemplate); }}
+        />
+      )}
+    </div>
+  );
+}
+
+function FeaturedCard({ template, onInfo, onUse, rationale }: { template: Template; onInfo: () => void; onUse: () => void; rationale: string | null }) {
+  const ac = ACCENT[template.accentKey];
+  return (
+    <div style={{ background: C.surfaceContainer, border: `1px solid ${C.outlineVariant}`, borderLeft: `3px solid ${ac}`, borderRadius: 16, overflow: 'hidden', boxShadow: `0 0 50px -14px rgba(${rgb(ac)},0.30)` }}>
+      <div style={{ position: 'relative', height: 120, background: C.surfaceHighest }}>
+        <div style={{ position: 'absolute', inset: 0, background: `linear-gradient(to bottom, rgba(17,19,24,0) 30%, ${C.surfaceContainer} 100%)`, zIndex: 2 }} />
+        {template.badge && (
+          <div style={{ position: 'absolute', top: 12, left: 14, zIndex: 3, background: ac, color: '#05080f', fontSize: '0.57rem', letterSpacing: '0.2em', fontWeight: 800, padding: '4px 11px', borderRadius: 100, textTransform: 'uppercase' }}>
+            {template.badge}
+          </div>
+        )}
+        <button onClick={onInfo} style={{ position: 'absolute', top: 10, right: 12, zIndex: 3, background: 'rgba(0,0,0,0.5)', border: 'none', borderRadius: 8, width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+          <InfoIcon color={C.onSurfaceVariant} />
+        </button>
+        <div style={{ position: 'absolute', bottom: 18, left: 18, zIndex: 2 }}>
+          <span style={{ fontFamily: 'Space Grotesk, sans-serif', fontWeight: 900, fontSize: 'clamp(1.4rem,5vw,1.9rem)', letterSpacing: '-0.04em', color: C.onSurface, lineHeight: 1 }}>{template.name}</span>
+        </div>
+      </div>
+      <div style={{ padding: '16px 18px 18px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+          <span style={{ fontSize: '0.57rem', letterSpacing: '0.2em', textTransform: 'uppercase', color: ac, fontWeight: 700 }}>{template.tag}</span>
+          <span style={{ width: 3, height: 3, borderRadius: '50%', background: C.outlineVariant }} />
+          <span style={{ fontSize: '0.57rem', letterSpacing: '0.15em', textTransform: 'uppercase', color: C.outline, fontWeight: 600 }}>{template.experience}</span>
+        </div>
+        {rationale && (
+          <p style={{ fontSize: 12, color: C.tertiary, fontWeight: 600, margin: '0 0 10px' }}>Recommended for you</p>
+        )}
+        <p style={{ color: C.onSurfaceVariant, fontSize: 13, lineHeight: 1.6, fontWeight: 500, margin: '0 0 14px' }}>{template.description}</p>
+        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 14 }}>
+          {template.days.map((d, i) => {
+            const c = DAY_COLORS[i % DAY_COLORS.length]!;
+            return <span key={i} style={{ fontSize: 10, fontWeight: 700, color: c, background: `rgba(${rgb(c)},0.1)`, borderRadius: 5, padding: '3px 9px' }}>{d}</span>;
+          })}
+        </div>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button onClick={onUse} style={{ flex: 1, padding: '13px 0', borderRadius: 12, border: 'none', background: `linear-gradient(135deg,${C.primary} 0%,#3a5cbf 100%)`, color: '#05080f', fontFamily: 'Space Grotesk, sans-serif', fontWeight: 900, fontSize: 13, cursor: 'pointer' }}>
+            Start This Program →
+          </button>
+          <button onClick={onInfo} style={{ flex: 1, padding: '13px 0', borderRadius: 12, border: `1px solid ${C.outlineVariant}`, background: 'transparent', color: C.onSurfaceVariant, fontFamily: 'Manrope, sans-serif', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+            Preview
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StandardCard({ template, expanded, onToggle, onInfo, onUse }: {
+  template: Template; expanded: boolean;
+  onToggle: () => void; onInfo: () => void; onUse: () => void;
+}) {
+  const ac = ACCENT[template.accentKey];
+  return (
+    <div style={{ background: C.surfaceContainer, border: `1px solid ${C.outlineVariant}`, borderLeft: `3px solid ${ac}`, borderRadius: 16, boxShadow: expanded ? `0 0 30px -10px rgba(${rgb(ac)},0.22)` : 'none' }}>
+      <div style={{ padding: '16px 16px 14px', cursor: 'pointer' }} onClick={onToggle}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 5, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: '0.57rem', letterSpacing: '0.2em', textTransform: 'uppercase', color: ac, fontWeight: 700 }}>{template.tag}</span>
+              {template.badge && <span style={{ fontSize: '0.5rem', letterSpacing: '0.15em', textTransform: 'uppercase', color: C.onSurface, background: C.surfaceHigh, padding: '2px 7px', borderRadius: 100, fontWeight: 700 }}>{template.badge}</span>}
             </div>
-            <div style={{ position: 'relative', marginBottom: '8px' }}>
-              <Search size={14} color="#8e909c" style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)' }} />
-              <input value={exerciseQuery} onChange={(e) => setExerciseQuery(e.target.value)} placeholder="Search exercise" className="k-input" style={{ paddingLeft: '30px' }} />
-            </div>
-            <select className="k-input" value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} style={{ marginBottom: '8px' }}>
-              <option value="ALL">All muscle groups</option>
-              {[...new Set(allExercises.map((item) => item.primaryMuscle).filter(Boolean))].map((muscle) => (
-                <option key={muscle} value={muscle}>{muscle}</option>
-              ))}
-            </select>
-            <div style={{ maxHeight: '240px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              {allExercises
-                .filter((item) => (categoryFilter === 'ALL' || item.primaryMuscle === categoryFilter)
-                  && item.name.toLowerCase().includes(exerciseQuery.toLowerCase()))
-                .slice(0, 40)
-                .map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => {
-                      setScratchDays((prev) => prev.map((day, index) => {
-                        if (index !== pickerDayIndex) return day;
-                        const nextExercises = [...day.exercises, { id: item.id, name: item.name, primaryMuscle: item.primaryMuscle }];
-                        return {
-                          ...day,
-                          exercises: nextExercises,
-                          label: buildDayLabel(index, day.primaryMuscle, nextExercises),
-                        };
-                      }));
-                      setPickerDayIndex(null);
-                    }}
-                    style={{ backgroundColor: '#161820', border: '1px solid #3a3c44', borderRadius: '10px', padding: '8px', textAlign: 'left', cursor: 'pointer' }}
-                  >
-                    <p style={{ fontFamily: 'Manrope', color: '#e2e2e8', fontSize: '0.82rem', margin: 0 }}>{item.name}</p>
-                    <p style={{ fontFamily: 'Manrope', color: '#8e909c', fontSize: '0.68rem', margin: 0 }}>{item.primaryMuscle ?? 'General'}</p>
-                  </button>
-                ))}
-            </div>
+            <h3 style={{ fontFamily: 'Space Grotesk, sans-serif', fontWeight: 800, fontSize: 'clamp(1.1rem,4vw,1.3rem)', letterSpacing: '-0.035em', color: C.onSurface, margin: 0, lineHeight: 1.15 }}>{template.name}</h3>
           </div>
         </div>
-      )}
-
-      {infoTemplate && (
-        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(12,14,18,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px', zIndex: 50 }}>
-          <div style={{ width: '100%', maxWidth: '430px', backgroundColor: '#1e2026', border: '1px solid #3a3c44', borderRadius: '16px', padding: '14px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-              <p style={{ fontFamily: "'Space Grotesk', sans-serif", color: '#e2e2e8', fontSize: '1rem', fontWeight: 700 }}>{infoTemplate.name}</p>
-              <button type="button" onClick={() => setInfoTemplate(null)} style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}>
-                <X size={16} color="#8e909c" />
-              </button>
+        <div style={{ display: 'flex', gap: 7, marginTop: 12, flexWrap: 'wrap' }}>
+          {template.stats.map((s) => (
+            <div key={s.label} style={{ background: C.surfaceHigh, borderRadius: 7, padding: '5px 9px' }}>
+              <span style={{ display: 'block', fontSize: '0.5rem', letterSpacing: '0.16em', textTransform: 'uppercase', color: C.outline, fontWeight: 700 }}>{s.label}</span>
+              <span style={{ display: 'block', fontSize: 11, fontWeight: 800, color: C.onSurfaceVariant, marginTop: 2 }}>{s.value}</span>
             </div>
-            <p style={{ fontFamily: 'Manrope', color: '#8e909c', fontSize: '0.8rem', marginBottom: '8px' }}>
-              {infoTemplate.detail?.description ?? 'Program template from canonical API source.'}
-            </p>
-            <p style={{ fontFamily: 'Manrope', color: '#e2e2e8', fontSize: '0.75rem' }}>Split: {infoTemplate.splitStyleLabel}</p>
-            <p style={{ fontFamily: 'Manrope', color: '#e2e2e8', fontSize: '0.75rem' }}>Duration: {infoTemplate.durationWeeks} weeks</p>
-            <p style={{ fontFamily: 'Manrope', color: '#e2e2e8', fontSize: '0.75rem' }}>Primary focus: {infoTemplate.primaryFocus}</p>
-            <p className="label-sm" style={{ color: '#8e909c', marginBottom: '6px' }}>Weekly Structure</p>
-            {(infoTemplate.detail?.splitConfigs ?? []).flatMap((split) => split.days).map((day) => (
-              <p key={`${day.dayNumber}-${day.label}`} style={{ fontFamily: 'Manrope', color: '#8e909c', fontSize: '0.7rem', margin: '0 0 4px' }}>
-                {`Day ${day.dayNumber} - ${day.label}`}
-              </p>
-            ))}
+          ))}
+        </div>
+      </div>
+      {expanded && (
+        <div style={{ padding: '0 16px 16px', borderTop: `1px solid ${C.outlineVariant}`, paddingTop: 14 }}>
+          <p style={{ color: C.onSurfaceVariant, fontSize: 13, lineHeight: 1.6, fontWeight: 500, margin: '0 0 12px' }}>{template.description}</p>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button onClick={(e) => { e.stopPropagation(); onUse(); }} style={{ flex: 1, padding: '12px 0', borderRadius: 12, border: 'none', background: `linear-gradient(135deg,${C.primary} 0%,#3a5cbf 100%)`, color: '#05080f', fontFamily: 'Space Grotesk, sans-serif', fontWeight: 900, fontSize: 13, cursor: 'pointer' }}>
+              Start This Program →
+            </button>
+            <button onClick={(e) => { e.stopPropagation(); onInfo(); }} style={{ flex: 1, padding: '12px 0', borderRadius: 12, border: `1px solid ${C.outlineVariant}`, background: 'transparent', color: C.onSurfaceVariant, fontFamily: 'Manrope, sans-serif', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+              Preview
+            </button>
           </div>
         </div>
       )}
     </div>
+  );
+}
+
+function DurationPicker({
+  totalWeeks,
+  durationMode,
+  showCustomStepper,
+  onSelectPreset,
+  onOpenCustom,
+  onStepCustom,
+  onDismissCustom,
+}: {
+  totalWeeks: number;
+  durationMode: 'preset' | 'custom';
+  showCustomStepper: boolean;
+  onSelectPreset: (w: number) => void;
+  onOpenCustom: () => void;
+  onStepCustom: (delta: number) => void;
+  onDismissCustom: () => void;
+}) {
+  const pillBase: React.CSSProperties = {
+    flex: 1,
+    padding: '12px 0',
+    borderRadius: 12,
+    fontFamily: 'Manrope, sans-serif',
+    fontWeight: 700,
+    fontSize: 13,
+    cursor: 'pointer',
+  };
+
+  const isCustomActive = durationMode === 'custom' && !DURATION_PRESETS.includes(totalWeeks as typeof DURATION_PRESETS[number]);
+
+  return (
+    <div style={{ display: 'flex', gap: 8, alignItems: 'stretch' }}>
+      {DURATION_PRESETS.map((w) => {
+        const selected = durationMode === 'preset' && totalWeeks === w;
+        return (
+          <button
+            key={w}
+            type="button"
+            onClick={() => onSelectPreset(w)}
+            style={{
+              ...pillBase,
+              border: selected ? 'none' : `1px solid ${C.outlineVariant}`,
+              background: selected ? C.primary : 'transparent',
+              color: selected ? '#05080f' : C.onSurfaceVariant,
+            }}
+          >
+            {w} weeks
+          </button>
+        );
+      })}
+
+      {showCustomStepper ? (
+        <div style={{
+          flex: 1,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 6,
+          padding: '6px 8px',
+          borderRadius: 12,
+          border: `1px solid ${C.primary}`,
+          background: `rgba(${rgb(C.primary)},0.08)`,
+        }}>
+          <button type="button" onClick={() => onStepCustom(-1)} disabled={totalWeeks <= MIN_CUSTOM_WEEKS} style={{ background: C.surfaceHigh, border: 'none', borderRadius: 8, width: 28, height: 28, color: C.onSurface, fontWeight: 800, cursor: totalWeeks <= MIN_CUSTOM_WEEKS ? 'not-allowed' : 'pointer', opacity: totalWeeks <= MIN_CUSTOM_WEEKS ? 0.4 : 1 }}>−</button>
+          <span style={{ fontFamily: 'Manrope, sans-serif', fontWeight: 700, fontSize: 13, color: C.primary, whiteSpace: 'nowrap' }}>{totalWeeks} wks</span>
+          <button type="button" onClick={() => onStepCustom(1)} disabled={totalWeeks >= MAX_CUSTOM_WEEKS} style={{ background: C.surfaceHigh, border: 'none', borderRadius: 8, width: 28, height: 28, color: C.onSurface, fontWeight: 800, cursor: totalWeeks >= MAX_CUSTOM_WEEKS ? 'not-allowed' : 'pointer', opacity: totalWeeks >= MAX_CUSTOM_WEEKS ? 0.4 : 1 }}>+</button>
+        </div>
+      ) : isCustomActive ? (
+        <button
+          type="button"
+          onClick={onDismissCustom}
+          style={{
+            ...pillBase,
+            border: 'none',
+            background: C.primary,
+            color: '#05080f',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 6,
+          }}
+        >
+          {totalWeeks} weeks
+          <span style={{ fontSize: 14, lineHeight: 1, opacity: 0.7 }}>×</span>
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={onOpenCustom}
+          style={{
+            ...pillBase,
+            flex: 0.7,
+            border: `1px dashed ${C.outline}`,
+            background: 'transparent',
+            color: C.outline,
+          }}
+        >
+          +
+        </button>
+      )}
+    </div>
+  );
+}
+
+function DetailModal({
+  template,
+  totalWeeks,
+  detail,
+  detailLoading,
+  onClose,
+  onUse,
+}: {
+  template: Template;
+  totalWeeks: number;
+  detail: TemplateDetail | null;
+  detailLoading: boolean;
+  onClose: () => void;
+  onUse: () => void;
+}) {
+  const ac = ACCENT[template.accentKey];
+  const sessions = sessionCount(template.frequencyPerWeek, totalWeeks);
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 60, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={onClose}>
+      <div style={{ position: 'absolute', inset: 0, background: 'rgba(8,10,16,0.85)', backdropFilter: 'blur(14px)' }} />
+      <div onClick={(e) => e.stopPropagation()} style={{ position: 'relative', width: '100%', maxWidth: 600, background: C.surfaceContainer, borderRadius: '20px 20px 0 0', maxHeight: '88vh', overflowY: 'auto', border: `1px solid ${C.outlineVariant}`, borderBottom: 'none' }}>
+        <div style={{ display: 'flex', justifyContent: 'center', padding: '12px 0 0' }}>
+          <div style={{ width: 40, height: 4, borderRadius: 2, background: C.outlineVariant }} />
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 20px 14px', background: C.surfaceLow, borderBottom: `1px solid ${C.outlineVariant}` }}>
+          <div>
+            <p style={{ margin: '0 0 2px', fontSize: '0.57rem', letterSpacing: '0.2em', textTransform: 'uppercase', color: ac, fontWeight: 700 }}>{template.tag}</p>
+            <h4 style={{ margin: 0, fontFamily: 'Space Grotesk, sans-serif', fontWeight: 900, fontSize: 20, letterSpacing: '-0.04em', color: C.onSurface }}>{template.name}</h4>
+          </div>
+          <button onClick={onClose} style={{ background: C.surfaceHigh, border: 'none', borderRadius: 8, width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+            <CloseIcon />
+          </button>
+        </div>
+        <div style={{ padding: 20 }}>
+          <p style={{ color: C.onSurfaceVariant, fontSize: 13, lineHeight: 1.6, fontWeight: 500, margin: '0 0 20px' }}>{template.description}</p>
+          <SectionLabel text="Block Architecture" />
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8, marginBottom: 20 }}>
+            {STATIC_MODAL_PHASES.map((ph, i) => (
+              <div key={i} style={{ background: C.surfaceLow, borderRadius: 10, padding: '10px 12px', borderLeft: ph.accent ? `3px solid ${C.tertiary}` : `3px solid ${C.outlineVariant}` }}>
+                <span style={{ display: 'block', fontSize: '0.5rem', letterSpacing: '0.15em', textTransform: 'uppercase', color: ph.accent ? C.tertiary : C.outline, fontWeight: 700, marginBottom: 4 }}>{ph.label}</span>
+                <span style={{ fontSize: 11, fontWeight: 700, color: C.onSurface }}>{ph.title}</span>
+              </div>
+            ))}
+          </div>
+          <SectionLabel text="What Gets Created" />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 20 }}>
+            <CreatesRow color={C.secondary} symbol="◈" label="1 Training block" sub={`${totalWeeks} weeks · ${template.frequencyPerWeek} sessions/week · MEV→MRV volume progression`} />
+            <CreatesRow color={C.tertiary} symbol="⊞" label={`${sessions} Workout sessions`} sub="Engine delivers prescription per session — load, reps, RPE" />
+            <CreatesRow color={C.primary} symbol="◉" label="Fatigue tracking" sub="SFL accumulates per-session · deload auto-fires at threshold" />
+          </div>
+          <SectionLabel text="Weekly Matrix" />
+          {detailLoading && (
+            <p style={{ margin: '0 0 12px', fontSize: 13, color: C.outline }}>Loading exercises...</p>
+          )}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 7, marginBottom: 24 }}>
+            {(detail?.splitConfigs?.[0]?.days ?? template.days.map((label, idx) => ({
+              dayNumber: idx + 1,
+              label,
+              exercises: [] as TemplateDetail['splitConfigs'][0]['days'][0]['exercises'],
+            })))
+              .filter((day) => !('dayType' in day) || (day as { dayType?: string }).dayType !== 'REST')
+              .map((day, i) => {
+              const c = DAY_COLORS[i % DAY_COLORS.length]!;
+              const exercises = day.exercises?.filter((e) => e.exercise?.name) ?? [];
+              return (
+                <div key={day.dayNumber ?? i} style={{ background: C.surfaceLow, borderRadius: 10, borderLeft: `3px solid ${c}`, overflow: 'hidden' }}>
+                  <div style={{ padding: '11px 14px' }}>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: C.onSurface }}>Day {day.dayNumber ?? i + 1}: {day.label}</span>
+                  </div>
+                  {exercises.length > 0 && (
+                    <div style={{ padding: '0 14px 10px 20px', display: 'flex', flexDirection: 'column', gap: 5 }}>
+                      {exercises.map((entry, j) => (
+                        <div key={j} style={{ display: 'flex', alignItems: 'baseline', gap: 6, fontSize: 11, color: C.onSurfaceVariant, fontWeight: 500 }}>
+                          <span style={{ color: c, fontWeight: 800, flexShrink: 0 }}>├</span>
+                          <span>
+                            {entry.exercise!.name} — {entry.setsTarget} sets — RPE {derivePreviewRpe(entry.repRangeMin, entry.repRangeMax)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <button onClick={onUse} style={{ width: '100%', padding: '15px 0', borderRadius: 14, border: 'none', background: `linear-gradient(135deg,${C.primary} 0%,#3a5cbf 100%)`, color: '#05080f', fontFamily: 'Space Grotesk, sans-serif', fontWeight: 900, fontSize: 15, cursor: 'pointer' }}>
+            Start This Program →
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SectionLabel({ text }: { text: string }) {
+  return <p style={{ margin: '0 0 10px', fontSize: '0.57rem', letterSpacing: '0.22em', textTransform: 'uppercase', color: C.outline, fontWeight: 700 }}>{text}</p>;
+}
+
+function CreatesRow({ color, symbol, label, sub }: { color: string; symbol: string; label: string; sub: string }) {
+  return (
+    <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', background: C.surfaceLow, borderRadius: 10, padding: '10px 12px' }}>
+      <span style={{ fontSize: 16, color, flexShrink: 0, marginTop: 1 }}>{symbol}</span>
+      <div>
+        <span style={{ display: 'block', fontSize: 12, fontWeight: 700, color: C.onSurface }}>{label}</span>
+        <span style={{ display: 'block', fontSize: 11, fontWeight: 500, color: C.onSurfaceVariant, marginTop: 2, lineHeight: 1.45 }}>{sub}</span>
+      </div>
+    </div>
+  );
+}
+
+function SearchIcon({ size = 20, color = C.outline }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 20 20" fill="none">
+      <circle cx="9" cy="9" r="5.5" stroke={color} strokeWidth="1.6" />
+      <path d="M13.5 13.5L17 17" stroke={color} strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function InfoIcon({ color = C.outline }: { color?: string }) {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <circle cx="8" cy="8" r="6.5" stroke={color} strokeWidth="1.4" />
+      <path d="M8 7v4" stroke={color} strokeWidth="1.5" strokeLinecap="round" />
+      <circle cx="8" cy="5.5" r="0.75" fill={color} />
+    </svg>
+  );
+}
+
+function CloseIcon({ color = C.outline }: { color?: string }) {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+      <path d="M2 2L12 12M12 2L2 12" stroke={color} strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
   );
 }
 
 function NewMesocycleLoadingState() {
   return (
-    <div style={{ minHeight: '100dvh', backgroundColor: '#111318', paddingBottom: '96px' }}>
-      <AppHeader title="Create Block" showBack backHref="/mesocycles" />
-      <div style={{ maxWidth: '480px', margin: '0 auto', padding: '20px' }}>
-        <p style={{ fontFamily: 'Manrope, sans-serif', fontSize: '0.875rem', color: '#8e909c' }}>
-          Loading...
-        </p>
+    <div style={{ minHeight: '100dvh', backgroundColor: C.surface, paddingBottom: 96 }}>
+      <AppHeader title="Choose Program" showBack backHref="/mesocycles" />
+      <div style={{ maxWidth: 600, margin: '0 auto', padding: 20 }}>
+        <p style={{ fontFamily: 'Manrope, sans-serif', fontSize: 13, color: C.outline }}>Loading...</p>
       </div>
     </div>
   );
-}
-
-function buildDayLabel(dayIndex: number, primaryMuscle: string, exercises: ScratchExercise[]) {
-  const display = (value: string) => value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
-  const relatedMuscles = [...new Set(exercises.map((item) => item.primaryMuscle).filter(Boolean))] as string[];
-  const secondary = relatedMuscles
-    .filter((muscle) => muscle !== primaryMuscle && muscle !== 'GENERAL')
-    .slice(0, 2)
-    .map(display);
-  const primary = primaryMuscle === 'GENERAL' ? `Day ${dayIndex + 1}` : display(primaryMuscle);
-  if (secondary.length === 0) return `Day ${dayIndex + 1} - ${primary}`;
-  return `Day ${dayIndex + 1} - ${primary} & ${secondary.join(' & ')}`;
 }

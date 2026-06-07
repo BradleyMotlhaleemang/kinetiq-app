@@ -5,607 +5,547 @@ import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/auth.store';
 import { mesocyclesApi } from '@/lib/api/mesocycles';
 import { workoutsApi } from '@/lib/api/workouts';
+import { templatesApi, type TemplateListItem } from '@/lib/api/templates';
 import api, { ApiError } from '@/lib/api/client';
-import { ChevronRight, Play, Trophy, Zap } from 'lucide-react';
 import AppHeader from '@/components/AppHeader';
 
-// ─── Brand Tokens ─────────────────────────────────────────────────────────────
-const PRIMARY          = '#b1c5ff';
-const PRIMARY_DIM      = 'rgba(177,197,255,0.12)';
-const PRIMARY_GLOW     = 'rgba(177,197,255,0.35)';
-const SECONDARY        = '#d4bbff';
-const TERTIARY         = '#59d8de';
-const SURFACE          = '#111318';
-const SURFACE_CONTAINER = '#1a1c22';
-const SURFACE_HIGH     = '#282a30';
-const OUTLINE          = '#8e909c';
-const ON_SURFACE       = '#e2e2e8';
-const INVERSE          = '#e2e2e8';
+const C = {
+  primary: '#b1c5ff',
+  secondary: '#d4bbff',
+  tertiary: '#59d8de',
+  surface: '#111318',
+  surfaceLow: '#161820',
+  surfaceContainer: '#1e2026',
+  surfaceHigh: '#282a30',
+  outline: '#8e909c',
+  outlineVariant: '#3a3c44',
+  onSurface: '#e2e2e8',
+  onSurfaceVariant: '#c5c6d2',
+};
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  STATIC CONTENT BLOCK
-//  All strings marked @static below are safe to edit freely.
-//  Strings marked @dynamic are derived from API/auth data — do not hardcode.
-// ─────────────────────────────────────────────────────────────────────────────
+const DAY_COLORS = [C.primary, C.tertiary, C.secondary, '#a2e7ff'];
 
-/** @static Sub-tagline shown above the greeting headline */
-const STATIC_TAGLINE = 'Performance Protocol Activated';
-
-/** @static Word(s) appended after the user's name in the main greeting */
-const STATIC_GREETING_SUFFIX = 'Lightweight!!!';
-
-/** @static Label for the philosophy footer section */
-const STATIC_PHILOSOPHY_LABEL = 'Philosophy';
-
-/**
- * @static Philosophy quote shown in the footer banner.
- * Edit freely — line breaks are handled automatically.
- */
-const STATIC_PHILOSOPHY_HEADLINE =
-  'Information without movement is useless. Movement without information is wasted.';
-
-/**
- * @static URL of the motivational background image in the philosophy section.
- * Replace with a local asset path e.g. '/images/gym-bg.jpg' or a CDN URL.
- */
-const STATIC_MOTIVATION_IMAGE_URL =
-  'https://images.unsplash.com/photo-1517836357463-d25dfeac3438?q=80&w=2000&auto=format&fit=crop';
-
-/** @static Alt text for the motivation image (accessibility) */
-const STATIC_MOTIVATION_IMAGE_ALT = 'Athletic gym atmosphere';
-
-/** @static Small label above the "Start Session" button */
-const STATIC_START_LABEL = 'Ready to Engage';
-
-/**
- * @static Next suggested day label.
- * TODO: replace with real split-day logic from mesocycle/workout data.
- */
-const STATIC_SUGGESTED_DAY = 'Day 2 – Week 1';
-
-/**
- * @static PR exercise name displayed in the Milestones card.
- * TODO: wire to PRRecord API endpoint.
- */
-const STATIC_PR_EXERCISE = 'Deadlift';
-
-/** @static PR value. TODO: wire to PRRecord API. */
-const STATIC_PR_VALUE = '220';
-
-/** @static PR unit (kg / lbs). */
-const STATIC_PR_UNIT = 'kg';
-
-/**
- * @static Muscle group shown in the Performance Insight card.
- * TODO: replace with most-trained muscle from analytics API.
- */
-const STATIC_INSIGHT_MUSCLE = 'Chest';
-
-/** @static Volume delta badge text. TODO: wire to analytics/volume API. */
-const STATIC_INSIGHT_CHANGE = '+5%';
-
-/** @static Sub-label under the insight muscle heading. */
-const STATIC_INSIGHT_LABEL = 'Volume vs last week';
-
-/**
- * @static Bar heights for the muscle volume chart (0–100 scale, 6 weeks).
- * TODO: replace with weekly VolumeSnapshot data from analytics API.
- */
-const STATIC_INSIGHT_BARS: number[] = [30, 25, 40, 35, 55, 90];
-
-/**
- * @static Sparkline exercise label in the Milestones card.
- * TODO: replace with analytics/e1rm/:exerciseId label.
- */
-const STATIC_SPARKLINE_LABEL = 'Bench Press e1RM';
-
-/**
- * @static Sparkline data points (7-session rolling e1RM in kg).
- * TODO: wire to GET /analytics/e1rm/:exerciseId.
- */
-const STATIC_SPARKLINE_DATA: number[] = [100, 105, 102, 108, 111, 110, 115];
-
-/** @static Unit for sparkline axis label. */
-const STATIC_SPARKLINE_UNIT = 'kg';
-
-/**
- * @static Fallback recent workout rows shown when API returns no history.
- * Replace label/date/duration with real data — these are display-only placeholders.
- */
-const STATIC_FALLBACK_WORKOUTS = [
-  { label: 'Push Focused A',  date: 'Oct 22', duration: '72 mins' },
-  { label: 'Pull Focused B',  date: 'Oct 20', duration: '65 mins' },
-  { label: 'Leg Power Load',  date: 'Oct 18', duration: '88 mins' },
+const MUSCLE_LABEL_MAP: [string, string][] = [
+  ['push', 'Chest · Shoulders · Triceps'],
+  ['pull', 'Back · Biceps · Rear Delts'],
+  ['leg', 'Quads · Hamstrings · Glutes · Calves'],
+  ['lower', 'Quads · Hamstrings · Glutes · Calves'],
+  ['upper', 'Chest · Back · Shoulders · Arms'],
+  ['full body', 'Full Body'],
+  ['full', 'Full Body'],
 ];
+
+type ExpandDay = {
+  id: string;
+  dayNumber: number | null;
+  sessionType: string;
+  date: string;
+  completed: boolean;
+  prescription: { exercises?: unknown[] } | null;
+};
+
+type ExpandWeek = {
+  weekNumber: number;
+  label: string;
+  days: ExpandDay[];
+};
+
+type ExpandProgram = {
+  id: string;
+  name: string;
+  currentWeek: number;
+  totalWeeks?: number;
+  weekCount: number;
+  startDate: string;
+  weeks: ExpandWeek[];
+};
+
+type MesocycleActive = {
+  id: string;
+  name: string;
+  currentWeek: number;
+  totalWeeks: number;
+  startDate?: string;
+};
+
+type HistoryWorkout = {
+  id: string;
+  splitDayLabel?: string;
+  completedAt?: string;
+  durationMinutes?: number;
+  sets?: Array<{ weight?: number; exerciseId?: string }>;
+};
 
 type RecentPR = {
   id: string;
-  type: 'E1RM' | 'WEIGHT' | 'VOLUME' | string;
-  scope: 'ALL_TIME' | 'MESOCYCLE' | 'MONTHLY' | string;
+  type: string;
+  scope: string;
   value: number;
   achievedAt: string;
   exercise?: { name?: string };
 };
 
-function formatRelativeDate(value: string): string {
-  const date = new Date(value);
-  const diffMs = Date.now() - date.getTime();
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-  if (diffDays <= 0) return 'Today';
-  if (diffDays === 1) return '1 day ago';
-  if (diffDays < 7) return `${diffDays} days ago`;
-  const diffWeeks = Math.floor(diffDays / 7);
-  if (diffWeeks === 1) return '1 week ago';
-  if (diffWeeks < 5) return `${diffWeeks} weeks ago`;
-  const diffMonths = Math.floor(diffDays / 30);
-  if (diffMonths === 1) return '1 month ago';
-  return `${diffMonths} months ago`;
+type SessionState = 'rest' | 'start' | 'resume' | 'completed';
+
+function musclesFromLabel(label: string): string | null {
+  const lower = label.toLowerCase();
+  for (const [key, value] of MUSCLE_LABEL_MAP) {
+    if (lower.includes(key)) return value;
+  }
+  return null;
 }
 
-function scopeLabel(scope: string): string {
-  if (scope === 'ALL_TIME') return 'ALL TIME';
-  if (scope === 'MESOCYCLE') return 'THIS BLOCK';
-  if (scope === 'MONTHLY') return 'THIS MONTH';
-  return scope;
+function exerciseCount(day: ExpandDay | null): number {
+  if (!day?.prescription) return 0;
+  const exercises = day.prescription.exercises;
+  return Array.isArray(exercises) ? exercises.length : 0;
 }
 
-// ─── Sparkline SVG ────────────────────────────────────────────────────────────
+function computeTodayDayNumber(startDate: string, currentWeek: number): number {
+  const start = new Date(startDate);
+  start.setHours(0, 0, 0, 0);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const weekStart = new Date(start);
+  weekStart.setDate(start.getDate() + (currentWeek - 1) * 7);
+  const diffDays = Math.floor((today.getTime() - weekStart.getTime()) / (1000 * 60 * 60 * 24));
+  if (diffDays < 0) return 1;
+  return (diffDays % 7) + 1;
+}
 
-function Sparkline({ data, color, height = 56 }: { data: number[]; color: string; height?: number }) {
-  const max = Math.max(...data, 1);
-  const w   = 100;
-  const pts = data.map((v, i) => {
-    const x = data.length < 2 ? 50 : (i / (data.length - 1)) * w;
-    const y = height - (v / max) * (height - 8);
-    return `${x},${y}`;
-  });
-  const lastPt = pts[pts.length - 1]?.split(',') ?? ['100', '8'];
+function deriveSessionState(program: ExpandProgram, activeWorkoutId: string | null): {
+  state: SessionState;
+  todayWorkout: ExpandDay | null;
+  nextWorkout: ExpandDay | null;
+  accent: string;
+} {
+  const currentWeek = program.weeks.find((w) => w.weekNumber === program.currentWeek);
+  if (!currentWeek) {
+    return { state: 'rest', todayWorkout: null, nextWorkout: null, accent: C.outline };
+  }
 
+  const todayDayNumber = computeTodayDayNumber(program.startDate, program.currentWeek);
+  const todayWorkout = currentWeek.days.find((d) => d.dayNumber === todayDayNumber) ?? null;
+  const nextWorkout = currentWeek.days.find((d) => !d.completed) ?? null;
+  const allWeekComplete = currentWeek.days.length > 0 && currentWeek.days.every((d) => d.completed);
+
+  if (!todayWorkout) {
+    return { state: 'rest', todayWorkout: null, nextWorkout, accent: C.outline };
+  }
+
+  if (activeWorkoutId && todayWorkout.id === activeWorkoutId) {
+    return { state: 'resume', todayWorkout, nextWorkout, accent: C.primary };
+  }
+
+  if (todayWorkout.completed || allWeekComplete) {
+    return { state: 'completed', todayWorkout, nextWorkout, accent: C.tertiary };
+  }
+
+  return { state: 'start', todayWorkout, nextWorkout, accent: C.primary };
+}
+
+async function loadRecommendedPrograms(): Promise<TemplateListItem[]> {
+  const [recRes, userRes] = await Promise.all([
+    templatesApi.recommended(),
+    api.get('/api/v1/users/me'),
+  ]);
+
+  const rec = recRes.data as {
+    recommended?: TemplateListItem;
+    alternatives?: TemplateListItem[];
+  };
+  const user = userRes.data as { goalMode?: string; experienceLevel?: string };
+
+  const collected: TemplateListItem[] = [];
+  const seen = new Set<string>();
+
+  function add(t: TemplateListItem | undefined | null) {
+    if (!t || seen.has(t.id) || collected.length >= 3) return;
+    seen.add(t.id);
+    collected.push(t);
+  }
+
+  add(rec.recommended ?? null);
+  for (const alt of rec.alternatives ?? []) add(alt);
+
+  if (collected.length < 3) {
+    const goal = user.goalMode?.replace('_', ' ') ?? undefined;
+    const level = user.experienceLevel ?? undefined;
+    const filteredRes = await templatesApi.all({
+      ...(goal ? { goal } : {}),
+      ...(level ? { level } : {}),
+    });
+    const filtered = Array.isArray(filteredRes.data) ? (filteredRes.data as TemplateListItem[]) : [];
+    for (const t of filtered) {
+      add(t);
+      if (collected.length >= 3) break;
+    }
+  }
+
+  return collected;
+}
+
+function ProgramCard({ template, onClick }: { template: TemplateListItem; onClick: () => void }) {
   return (
-    <svg viewBox={`0 0 ${w} ${height}`} preserveAspectRatio="none" style={{ width: '100%', height }}>
-      <defs>
-        <linearGradient id={`sg${color.replace('#', '')}`} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%"   stopColor={color} stopOpacity="0.4" />
-          <stop offset="100%" stopColor={color} stopOpacity="0"   />
-        </linearGradient>
-      </defs>
-      <polygon
-        points={`0,${height} ${pts.join(' ')} ${w},${height}`}
-        fill={`url(#sg${color.replace('#', '')})`}
-      />
-      <polyline
-        points={pts.join(' ')}
-        fill="none"
-        stroke={color}
-        strokeWidth="2"
-        strokeLinejoin="round"
-        strokeLinecap="round"
-      />
-      <circle
-        cx={lastPt[0]}
-        cy={lastPt[1]}
-        r="3"
-        fill={color}
-        style={{ filter: `drop-shadow(0 0 5px ${color})` }}
-      />
-    </svg>
-  );
-}
-
-// ─── Bar chart ────────────────────────────────────────────────────────────────
-
-function BarChart({ bars, color }: { bars: number[]; color: string }) {
-  const max = Math.max(...bars, 1);
-  return (
-    <div style={{ display: 'flex', alignItems: 'flex-end', gap: '4px', height: '80px' }}>
-      {bars.map((v, i) => {
-        const isFinal = i === bars.length - 1;
-        const h       = Math.max((v / max) * 80, 6);
-        return (
-          <div
-            key={i}
-            style={{
-              flex: 1,
-              height: `${h}px`,
-              borderRadius: '4px 4px 2px 2px',
-              backgroundColor: isFinal ? color : `${color}28`,
-              boxShadow: isFinal ? `0 0 16px ${color}66` : 'none',
-            }}
-          />
-        );
-      })}
-    </div>
-  );
-}
-
-// ─── Workout row ──────────────────────────────────────────────────────────────
-
-function WorkoutRow({ label, date, duration, accent }: { label: string; date: string; duration: string; accent: string }) {
-  return (
-    <div
+    <button
+      type="button"
+      onClick={onClick}
       style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '14px',
-        backgroundColor: SURFACE_HIGH,
-        borderRadius: '14px',
+        width: '100%',
+        textAlign: 'left',
         cursor: 'pointer',
-        border: '1px solid transparent',
-        transition: 'border-color 0.15s',
+        background: C.surfaceContainer,
+        border: `1px solid ${C.outlineVariant}`,
+        borderLeft: `3px solid ${C.tertiary}`,
+        borderRadius: 16,
+        padding: '16px',
       }}
-      onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.borderColor = `${accent}44`; }}
-      onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.borderColor = 'transparent'; }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-        <div style={{ width: '5px', height: '40px', borderRadius: '9999px', backgroundColor: accent, flexShrink: 0 }} />
-        <div>
-          <p style={{ margin: 0, fontFamily: 'Manrope, sans-serif', fontWeight: 700, fontSize: '0.88rem', color: ON_SURFACE }}>
-            {label}
-          </p>
-          <p style={{ margin: '2px 0 0', fontFamily: 'Manrope, sans-serif', fontSize: '0.68rem', color: OUTLINE }}>
-            {date} · {duration}
-          </p>
-        </div>
-      </div>
-      <ChevronRight size={16} color={OUTLINE} />
-    </div>
+      <p style={{ margin: '0 0 4px', fontSize: '0.57rem', letterSpacing: '0.2em', textTransform: 'uppercase', color: C.tertiary, fontWeight: 700 }}>
+        {template.primaryFocus}
+      </p>
+      <h3 style={{ margin: '0 0 8px', fontFamily: 'Space Grotesk, sans-serif', fontWeight: 800, fontSize: 'clamp(1.1rem,4vw,1.3rem)', letterSpacing: '-0.035em', color: C.onSurface }}>
+        {template.name}
+      </h3>
+      <p style={{ margin: 0, fontSize: 12, color: C.outline }}>
+        {template.daysPerWeek} days/week · {template.durationWeeks} weeks · {template.level}
+      </p>
+    </button>
   );
 }
-
-// ─── Section label ────────────────────────────────────────────────────────────
-
-function SectionLabel({ children, light }: { children: React.ReactNode; light?: boolean }) {
-  return (
-    <p style={{ margin: 0, fontFamily: 'Manrope, sans-serif', fontSize: '0.58rem', fontWeight: 700, color: light ? 'rgba(0,0,0,0.45)' : OUTLINE, letterSpacing: '0.2em', textTransform: 'uppercase' }}>
-      {children}
-    </p>
-  );
-}
-
-// ─── Card wrapper ─────────────────────────────────────────────────────────────
-
-function Card({ children, style, accentLeft }: { children: React.ReactNode; style?: React.CSSProperties; accentLeft?: string }) {
-  return (
-    <div style={{ backgroundColor: SURFACE_CONTAINER, border: `1px solid ${SURFACE_HIGH}`, borderLeft: accentLeft ? `4px solid ${accentLeft}` : undefined, borderRadius: '20px', padding: '20px', ...style }}>
-      {children}
-    </div>
-  );
-}
-
-// ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
   const router = useRouter();
-  const [mesocycle, setMesocycle]       = useState<any>(null);
-  const [recentWorkouts, setRecentWorkouts] = useState<any[]>([]);
-  const [recentPrs, setRecentPrs] = useState<RecentPR[]>([]);
-  const [loading, setLoading]           = useState(true);
+  const { isAuthenticated, hydrated } = useAuthStore();
 
-  const { isAuthenticated, hydrated, email } = useAuthStore();
-
-  // @dynamic: derived from auth store email until profile displayName is available
-  const userName: string = email?.split('@')[0] ?? 'Athlete';
+  const [mesocycle, setMesocycle] = useState<MesocycleActive | null>(null);
+  const [program, setProgram] = useState<ExpandProgram | null>(null);
+  const [activeWorkoutId, setActiveWorkoutId] = useState<string | null>(null);
+  const [lastSession, setLastSession] = useState<HistoryWorkout | null>(null);
+  const [recentPr, setRecentPr] = useState<RecentPR | null>(null);
+  const [recommended, setRecommended] = useState<TemplateListItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [starting, setStarting] = useState(false);
 
   useEffect(() => {
     if (!hydrated) return;
-    if (!isAuthenticated()) { router.push('/auth/login'); return; }
+    if (!isAuthenticated()) {
+      router.push('/auth/login');
+      return;
+    }
     loadData();
   }, [hydrated]);
 
   async function loadData() {
     try {
-      const [mesoRes, histRes, prsRes] = await Promise.allSettled([
-        mesocyclesApi.active(),
+      const mesoRes = await mesocyclesApi.active();
+      const activeMeso = mesoRes.data as MesocycleActive | null;
+
+      if (!activeMeso?.id) {
+        const programs = await loadRecommendedPrograms();
+        setRecommended(programs);
+        setMesocycle(null);
+        return;
+      }
+
+      setMesocycle(activeMeso);
+
+      const [expandRes, histRes, prsRes, activeRes] = await Promise.allSettled([
+        api.get(`/api/v1/mesocycles/${activeMeso.id}/expand`),
         workoutsApi.history(),
         api.get('/api/v1/prs/recent?limit=5'),
+        api.get('/api/v1/workouts/active'),
       ]);
-      if (mesoRes.status === 'fulfilled') setMesocycle(mesoRes.value.data);
-      if (histRes.status === 'fulfilled') setRecentWorkouts(histRes.value.data.slice(0, 3));
+
+      if (expandRes.status === 'fulfilled') setProgram(expandRes.value.data as ExpandProgram);
+
+      if (histRes.status === 'fulfilled') {
+        const history = Array.isArray(histRes.value.data) ? histRes.value.data as HistoryWorkout[] : [];
+        setLastSession(history[0] ?? null);
+      }
+
       if (prsRes.status === 'fulfilled') {
-        setRecentPrs(Array.isArray(prsRes.value.data) ? prsRes.value.data : []);
+        const prs = Array.isArray(prsRes.value.data) ? prsRes.value.data as RecentPR[] : [];
+        const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+        const recent = prs.find((pr) => new Date(pr.achievedAt).getTime() >= sevenDaysAgo) ?? null;
+        setRecentPr(recent);
+      }
+
+      if (activeRes.status === 'fulfilled') {
+        const active = Array.isArray(activeRes.value.data) ? activeRes.value.data as Array<{ id: string }> : [];
+        setActiveWorkoutId(active[0]?.id ?? null);
       }
     } catch (err) {
-      if (err instanceof ApiError && err.status === 401) {
-        setMesocycle(null);
-        setRecentWorkouts([]);
-        setRecentPrs([]);
-        return;
-      }
+      if (err instanceof ApiError && err.status === 401) return;
       console.error(err);
+    } finally {
+      setLoading(false);
     }
-    finally      { setLoading(false); }
   }
 
-  async function startWorkout() {
+  async function handleStartWorkout(targetDay: ExpandDay | null) {
+    if (!mesocycle || starting) return;
+    setStarting(true);
     try {
-      const res = await workoutsApi.create({ mesocycleId: mesocycle?.id });
-      router.push(`/workout/${res.data.id}`);
-    } catch (err) {
-      if (err instanceof ApiError) {
-        console.error(
-          `Failed to start workout (${err.status}): ${err.message}`,
-          err.data,
-        );
+      if (targetDay?.id) {
+        router.push(`/workout/${targetDay.id}`);
         return;
       }
-      console.error('Failed to start workout:', err);
+      const res = await workoutsApi.create({ mesocycleId: mesocycle.id });
+      router.push(`/workout/${res.data.id}`);
+    } catch (err) {
+      console.error('Failed to start workout', err);
+    } finally {
+      setStarting(false);
     }
   }
 
   if (loading) {
     return (
-      <div style={{ minHeight: '100dvh', backgroundColor: SURFACE, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <p style={{ color: OUTLINE, fontFamily: 'Manrope, sans-serif', fontSize: '0.85rem' }}>Loading...</p>
+      <div style={{ minHeight: '100dvh', backgroundColor: C.surface, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <p style={{ color: C.outline, fontFamily: 'Manrope, sans-serif', fontSize: 13 }}>Loading...</p>
       </div>
     );
   }
 
-  // @dynamic: from mesocycle API response
-  const activeWeek    = mesocycle?.currentWeek ?? 1;
-  const totalWeeks    = mesocycle?.totalWeeks  ?? 8;
-  const progressPct   = Math.round((activeWeek / totalWeeks) * 100);
-  const mesocycleName: string = mesocycle?.name ?? 'No active block';
+  if (!mesocycle) {
+    return (
+      <div style={{ minHeight: '100dvh', backgroundColor: C.surface, paddingBottom: 110 }}>
+        <div style={{ maxWidth: 600, margin: '0 auto', padding: '0 20px' }}>
+          <AppHeader />
+          <main style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+            <div style={{
+              background: C.surfaceContainer,
+              border: `1px solid ${C.outlineVariant}`,
+              borderLeft: `3px solid ${C.primary}`,
+              borderRadius: 16,
+              padding: '24px 20px',
+            }}>
+              <p style={{ margin: '0 0 6px', color: C.outline, fontSize: '0.57rem', letterSpacing: '0.24em', textTransform: 'uppercase', fontWeight: 700 }}>
+                Get Started
+              </p>
+              <h1 style={{ margin: '0 0 10px', fontFamily: 'Space Grotesk, sans-serif', fontWeight: 900, fontSize: 'clamp(1.85rem,6vw,2.4rem)', letterSpacing: '-0.045em', color: C.onSurface }}>
+                Set up your first training block
+              </h1>
+              <p style={{ margin: 0, fontSize: 13, color: C.onSurfaceVariant, lineHeight: 1.6 }}>
+                Pick a program and we will generate every session automatically. Takes about two minutes.
+              </p>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {recommended.map((t) => (
+                <ProgramCard key={t.id} template={t} onClick={() => router.push(`/mesocycles/new?templateId=${t.id}`)} />
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => router.push('/mesocycles/new')}
+              style={{
+                width: '100%',
+                padding: '15px 0',
+                borderRadius: 14,
+                border: 'none',
+                background: 'linear-gradient(135deg, #b1c5ff 0%, #3a5cbf 100%)',
+                color: '#05080f',
+                fontFamily: 'Space Grotesk, sans-serif',
+                fontWeight: 900,
+                fontSize: 15,
+                cursor: 'pointer',
+              }}
+            >
+              Get Started →
+            </button>
+          </main>
+        </div>
+      </div>
+    );
+  }
 
-  const rowAccents = [PRIMARY, SECONDARY, TERTIARY];
+  const session = program
+    ? deriveSessionState(program, activeWorkoutId)
+    : { state: 'start' as SessionState, todayWorkout: null, nextWorkout: null, accent: C.primary };
+
+  const displayDay = session.todayWorkout ?? session.nextWorkout;
+  const dayLabel = displayDay?.sessionType ?? 'Training Session';
+  const muscles = displayDay ? musclesFromLabel(displayDay.sessionType) : null;
+  const count = exerciseCount(displayDay);
+  const progressPct = mesocycle.totalWeeks > 0
+    ? Math.round((mesocycle.currentWeek / mesocycle.totalWeeks) * 100)
+    : 0;
+
+  const topLift = lastSession?.sets?.reduce<{ weight: number; exerciseId?: string } | null>((best, set) => {
+    const w = set.weight ?? 0;
+    if (!best || w > best.weight) return { weight: w, exerciseId: set.exerciseId };
+    return best;
+  }, null);
 
   return (
-    <div style={{ minHeight: '100dvh', backgroundColor: SURFACE, fontFamily: 'Manrope, sans-serif', color: ON_SURFACE }}>
-      <div style={{ maxWidth: '980px', margin: '0 auto', padding: '0 20px 140px' }}>
-
-        {/* AppHeader — existing component, unchanged */}
+    <div style={{ minHeight: '100dvh', backgroundColor: C.surface, paddingBottom: 110 }}>
+      <div style={{ maxWidth: 600, margin: '0 auto', padding: '0 20px' }}>
         <AppHeader />
+        <main style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
-        <main style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          {/* Today's Session */}
+          <div style={{
+            background: C.surfaceContainer,
+            border: `1px solid ${C.outlineVariant}`,
+            borderLeft: `3px solid ${session.accent}`,
+            borderRadius: 16,
+            padding: '20px',
+          }}>
+            <p style={{ margin: '0 0 8px', fontSize: '0.57rem', letterSpacing: '0.22em', textTransform: 'uppercase', color: session.accent, fontWeight: 700 }}>
+              {session.state === 'rest' ? 'Rest Day' : "Today's Session"}
+            </p>
 
-          {/* ══════════════════════════
-              HERO — Greeting + Block
-          ══════════════════════════ */}
-          <section style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            {session.state === 'rest' ? (
+              <>
+                <h2 style={{ margin: '0 0 8px', fontFamily: 'Space Grotesk, sans-serif', fontWeight: 900, fontSize: 22, letterSpacing: '-0.04em', color: C.onSurface }}>
+                  Rest Day
+                </h2>
+                <p style={{ margin: 0, fontSize: 13, color: C.onSurfaceVariant, lineHeight: 1.6 }}>
+                  Next session: {session.nextWorkout?.sessionType ?? '—'}
+                </p>
+              </>
+            ) : (
+              <>
+                <h2 style={{ margin: '0 0 8px', fontFamily: 'Space Grotesk, sans-serif', fontWeight: 900, fontSize: 22, letterSpacing: '-0.04em', color: C.onSurface }}>
+                  {dayLabel}
+                </h2>
+                <p style={{ margin: '0 0 4px', fontSize: 13, color: C.onSurfaceVariant }}>
+                  Week {mesocycle.currentWeek} · Day {displayDay?.dayNumber ?? '—'}
+                </p>
+                {muscles && (
+                  <p style={{ margin: '0 0 4px', fontSize: 12, color: C.outline }}>{muscles}</p>
+                )}
+                {count > 0 && (
+                  <p style={{ margin: '0 0 16px', fontSize: 12, color: C.outline }}>{count} exercises</p>
+                )}
+                {session.state !== 'completed' && (
+                  <button
+                    type="button"
+                    onClick={() => handleStartWorkout(session.todayWorkout ?? session.nextWorkout)}
+                    disabled={starting}
+                    style={{
+                      width: '100%',
+                      padding: '14px 0',
+                      borderRadius: 12,
+                      border: 'none',
+                      background: 'linear-gradient(135deg, #b1c5ff 0%, #3a5cbf 100%)',
+                      color: '#05080f',
+                      fontFamily: 'Space Grotesk, sans-serif',
+                      fontWeight: 900,
+                      fontSize: 14,
+                      cursor: starting ? 'not-allowed' : 'pointer',
+                      opacity: starting ? 0.7 : 1,
+                    }}
+                  >
+                    {starting ? 'Starting...' : session.state === 'resume' ? 'Resume Workout' : 'Start Workout'}
+                  </button>
+                )}
+                {session.state === 'completed' && (
+                  <button
+                    type="button"
+                    disabled
+                    style={{
+                      width: '100%',
+                      padding: '14px 0',
+                      borderRadius: 12,
+                      border: `1px solid ${C.outlineVariant}`,
+                      background: C.surfaceHigh,
+                      color: C.outline,
+                      fontFamily: 'Manrope, sans-serif',
+                      fontWeight: 700,
+                      fontSize: 13,
+                      cursor: 'not-allowed',
+                    }}
+                  >
+                    Completed
+                  </button>
+                )}
+              </>
+            )}
+          </div>
 
-            {/* Greeting text */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-
-              {/* @static: edit STATIC_TAGLINE */}
-              <p style={{ margin: 0, fontSize: '0.6rem', fontWeight: 700, color: PRIMARY, letterSpacing: '0.22em', textTransform: 'uppercase' }}>
-                {STATIC_TAGLINE}
-              </p>
-
-              {/* @dynamic userName | @static STATIC_GREETING_SUFFIX */}
-              <h1 style={{ margin: 0, fontFamily: "'Space Grotesk', sans-serif", fontSize: 'clamp(2rem, 8vw, 4.5rem)', fontWeight: 900, lineHeight: 1.0, letterSpacing: '-0.025em', color: ON_SURFACE, textTransform: 'uppercase' }}>
-                Welcome {userName},
-                <br />
-                <span style={{ fontStyle: 'italic', WebkitTextStroke: '1.5px', WebkitTextStrokeColor: PRIMARY, color: 'transparent' }}>
-                  {STATIC_GREETING_SUFFIX}
-                </span>
-              </h1>
-
-              {/* @dynamic current date */}
-              <p style={{ margin: 0, fontSize: '0.75rem', color: OUTLINE }}>
-                {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
-              </p>
-            </div>
-
-            {/* Active Block card — @dynamic mesocycle data */}
-            <Card accentLeft={PRIMARY} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <SectionLabel>Active Block</SectionLabel>
-              <p style={{ margin: 0, fontFamily: "'Space Grotesk', sans-serif", fontSize: '1.25rem', fontWeight: 800, color: ON_SURFACE, letterSpacing: '-0.01em' }}>
-                {/* @dynamic */}
-                {mesocycleName}
-              </p>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                {/* @dynamic */}
-                <p style={{ margin: 0, fontSize: '0.78rem', color: OUTLINE }}>Week {activeWeek} of {totalWeeks}</p>
-                <div style={{ width: '140px', height: '5px', borderRadius: '9999px', backgroundColor: SURFACE_HIGH, overflow: 'hidden' }}>
-                  {/* @dynamic progressPct */}
-                  <div style={{ width: `${progressPct}%`, height: '100%', borderRadius: '9999px', backgroundColor: PRIMARY, boxShadow: `0 0 8px ${PRIMARY_GLOW}`, transition: 'width 0.6s ease' }} />
-                </div>
-              </div>
-            </Card>
-          </section>
-
-          {/* ══════════════════════════
-              START SESSION CTA
-          ══════════════════════════ */}
+          {/* Program Progress */}
           <button
             type="button"
-            onClick={startWorkout}
-            style={{ width: '100%', minHeight: '110px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 28px', borderRadius: '28px', border: 'none', background: `linear-gradient(135deg, ${PRIMARY} 0%, ${TERTIARY} 100%)`, cursor: 'pointer', boxShadow: `0 20px 60px -15px ${PRIMARY_GLOW}`, position: 'relative', overflow: 'hidden', transition: 'transform 0.2s' }}
-            onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.transform = 'scale(0.99)'; }}
-            onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.transform = 'scale(1)'; }}
+            onClick={() => router.push(`/mesocycles/${mesocycle.id}`)}
+            style={{
+              width: '100%',
+              textAlign: 'left',
+              cursor: 'pointer',
+              background: C.surfaceContainer,
+              border: `1px solid ${C.outlineVariant}`,
+              borderLeft: `3px solid ${C.secondary}`,
+              borderRadius: 16,
+              padding: '16px 18px',
+            }}
           >
-            <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to right, rgba(0,0,0,0.12), transparent)', pointerEvents: 'none' }} />
-
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', zIndex: 1 }}>
-              {/* @static */}
-              <span style={{ fontSize: '0.6rem', fontWeight: 700, letterSpacing: '0.2em', textTransform: 'uppercase', color: 'rgba(17,19,24,0.7)', marginBottom: '4px' }}>
-                {STATIC_START_LABEL}
-              </span>
-              <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 'clamp(1.6rem, 5vw, 2.8rem)', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '-0.02em', color: SURFACE, lineHeight: 1 }}>
-                Start Session
-              </span>
-            </div>
-
-            <div style={{ width: '60px', height: '60px', borderRadius: '9999px', backgroundColor: 'rgba(17,19,24,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, zIndex: 1 }}>
-              <Play size={28} color={SURFACE} fill={SURFACE} style={{ marginLeft: '3px' }} />
+            <p style={{ margin: '0 0 4px', fontSize: '0.57rem', letterSpacing: '0.22em', textTransform: 'uppercase', color: C.outline, fontWeight: 700 }}>
+              Program Progress
+            </p>
+            <p style={{ margin: '0 0 8px', fontFamily: 'Space Grotesk, sans-serif', fontWeight: 800, fontSize: 16, color: C.onSurface }}>
+              {mesocycle.name}
+            </p>
+            <p style={{ margin: '0 0 10px', fontSize: 12, color: C.outline }}>
+              Week {mesocycle.currentWeek} of {mesocycle.totalWeeks}
+            </p>
+            <div style={{ height: 4, backgroundColor: C.surfaceHigh, borderRadius: 9999, overflow: 'hidden' }}>
+              <div style={{ height: '100%', width: `${progressPct}%`, background: `linear-gradient(90deg, ${C.primary}, ${C.tertiary})`, borderRadius: 9999 }} />
             </div>
           </button>
 
-          {/* ══════════════════════════
-              BENTO GRID
-          ══════════════════════════ */}
-          <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
-
-            {/* ── Recent Volume ── */}
-            <Card style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <SectionLabel>Recent Volume</SectionLabel>
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {/* @dynamic recentWorkouts — falls back to @static placeholders */}
-                {recentWorkouts.length > 0
-                  ? recentWorkouts.map((w, i) => (
-                      <WorkoutRow
-                        key={w.id}
-                        label={w.splitDayLabel ?? 'Training Session'}
-                        date={new Date(w.completedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                        duration={w.durationMinutes ? `${w.durationMinutes} mins` : '–'}
-                        accent={rowAccents[i % rowAccents.length]}
-                      />
-                    ))
-                  : STATIC_FALLBACK_WORKOUTS.map((w, i) => (
-                      /* @static fallback — edit STATIC_FALLBACK_WORKOUTS above */
-                      <WorkoutRow key={w.label} label={w.label} date={w.date} duration={w.duration} accent={rowAccents[i % rowAccents.length]} />
-                    ))
-                }
-              </div>
-            </Card>
-
-            {/* ── Performance Insight (Inverse / Light card) ── */}
-            <div style={{ backgroundColor: INVERSE, borderRadius: '20px', padding: '20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', borderLeft: `6px solid ${PRIMARY}`, position: 'relative', overflow: 'hidden' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                <SectionLabel light>Performance Insight</SectionLabel>
-                {/* @static badge — edit STATIC_INSIGHT_CHANGE */}
-                <span style={{ backgroundColor: `${PRIMARY}22`, color: SURFACE, fontSize: '0.6rem', fontWeight: 900, padding: '3px 8px', borderRadius: '6px', letterSpacing: '0.06em' }}>
-                  {STATIC_INSIGHT_CHANGE} VOL
-                </span>
-              </div>
-
-              <div style={{ marginTop: '12px' }}>
-                {/* @static muscle name — edit STATIC_INSIGHT_MUSCLE */}
-                <h3 style={{ margin: 0, fontFamily: "'Space Grotesk', sans-serif", fontSize: '2rem', fontWeight: 900, letterSpacing: '-0.02em', textTransform: 'uppercase', color: SURFACE, lineHeight: 1.05 }}>
-                  {STATIC_INSIGHT_MUSCLE} Progress
-                </h3>
-                {/* @static sub-label — edit STATIC_INSIGHT_LABEL */}
-                <p style={{ margin: '6px 0 0', fontSize: '0.75rem', color: 'rgba(0,0,0,0.55)', fontWeight: 500 }}>
-                  {STATIC_INSIGHT_LABEL}
-                </p>
-              </div>
-
-              {/* @static bars — edit STATIC_INSIGHT_BARS */}
-              <div style={{ marginTop: '20px' }}>
-                <BarChart bars={STATIC_INSIGHT_BARS} color={SURFACE} />
-              </div>
-            </div>
-
-            {/* ── Milestones / PRs ── */}
-            <Card style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <SectionLabel>Milestones</SectionLabel>
-                <Trophy size={16} color={SECONDARY} />
-              </div>
-
-              {recentPrs.length === 0 ? (
-                <div style={{ backgroundColor: SURFACE_HIGH, borderRadius: '16px', padding: '16px', border: `1px solid ${SURFACE_HIGH}` }}>
-                  <p style={{ margin: 0, fontSize: '0.75rem', color: OUTLINE }}>
-                    Hit your first PR to see it here.
-                  </p>
-                </div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                  {recentPrs.map((pr) => (
-                    <div
-                      key={pr.id}
-                      style={{
-                        backgroundColor: SURFACE_HIGH,
-                        borderRadius: '14px',
-                        padding: '12px 14px',
-                        border: `1px solid ${PRIMARY}22`,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        gap: '10px',
-                      }}
-                    >
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                        <p style={{ margin: 0, fontSize: '0.85rem', fontWeight: 800, color: ON_SURFACE }}>
-                          {pr.exercise?.name ?? 'Exercise'}
-                        </p>
-                        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                          <span style={{ fontSize: '0.6rem', fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: PRIMARY, backgroundColor: `${PRIMARY}1f`, border: `1px solid ${PRIMARY}44`, borderRadius: '999px', padding: '2px 8px' }}>
-                            {pr.type}
-                          </span>
-                          <span style={{ fontSize: '0.56rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: OUTLINE, backgroundColor: `${OUTLINE}20`, border: `1px solid ${OUTLINE}33`, borderRadius: '999px', padding: '2px 8px' }}>
-                            {scopeLabel(pr.scope)}
-                          </span>
-                        </div>
-                      </div>
-                      <div style={{ textAlign: 'right' }}>
-                        <p style={{ margin: 0, fontFamily: "'Space Grotesk', sans-serif", fontSize: '1rem', fontWeight: 900, color: ON_SURFACE }}>
-                          {Number(pr.value).toFixed(1)}kg
-                        </p>
-                        <p style={{ margin: '2px 0 0', fontSize: '0.62rem', color: OUTLINE }}>
-                          {formatRelativeDate(pr.achievedAt)}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </Card>
-          </section>
-
-          {/* ══════════════════════════
-              NEXT SUGGESTED SESSION
-          ══════════════════════════ */}
-          <Card style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <div style={{ width: '40px', height: '40px', borderRadius: '12px', backgroundColor: PRIMARY_DIM, border: `1px solid ${PRIMARY}44`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <Zap size={18} color={PRIMARY} />
-              </div>
-              <div>
-                <SectionLabel>Next Suggested Session</SectionLabel>
-                {/* @static — edit STATIC_SUGGESTED_DAY, or wire to split API */}
-                <p style={{ margin: '4px 0 0', fontFamily: "'Space Grotesk', sans-serif", fontSize: '1.05rem', fontWeight: 800, color: ON_SURFACE, letterSpacing: '-0.01em' }}>
-                  {STATIC_SUGGESTED_DAY}
-                </p>
-              </div>
-            </div>
-
+          {/* Last Session */}
+          {lastSession && (
             <button
               type="button"
-              onClick={startWorkout}
-              style={{ padding: '10px 18px', borderRadius: '12px', border: 'none', backgroundColor: PRIMARY_DIM, color: PRIMARY, fontFamily: 'Manrope, sans-serif', fontWeight: 800, fontSize: '0.72rem', letterSpacing: '0.1em', textTransform: 'uppercase', cursor: 'pointer', flexShrink: 0, transition: 'background-color 0.15s' }}
-              onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = `${PRIMARY}28`; }}
-              onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = PRIMARY_DIM; }}
+              onClick={() => router.push('/history')}
+              style={{
+                width: '100%',
+                textAlign: 'left',
+                cursor: 'pointer',
+                background: C.surfaceContainer,
+                border: `1px solid ${C.outlineVariant}`,
+                borderLeft: `3px solid ${C.tertiary}`,
+                borderRadius: 16,
+                padding: '16px 18px',
+              }}
             >
-              Begin
+              <p style={{ margin: '0 0 4px', fontSize: '0.57rem', letterSpacing: '0.22em', textTransform: 'uppercase', color: C.outline, fontWeight: 700 }}>
+                Last Session
+              </p>
+              <p style={{ margin: '0 0 4px', fontFamily: 'Space Grotesk, sans-serif', fontWeight: 800, fontSize: 16, color: C.onSurface }}>
+                {lastSession.splitDayLabel ?? 'Training Session'}
+              </p>
+              <p style={{ margin: 0, fontSize: 12, color: C.outline }}>
+                {lastSession.completedAt
+                  ? new Date(lastSession.completedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                  : '—'}
+                {lastSession.durationMinutes ? ` · ${lastSession.durationMinutes} mins` : ''}
+                {topLift?.weight ? ` · Top lift ${topLift.weight} kg` : ''}
+              </p>
             </button>
-          </Card>
+          )}
 
-          {/* ══════════════════════════════════════════
-              PHILOSOPHY FOOTER BANNER
-              @static: edit STATIC_PHILOSOPHY_* constants above
-              @static: edit STATIC_MOTIVATION_IMAGE_URL above
-          ══════════════════════════════════════════ */}
-          <section style={{ position: 'relative', borderRadius: '28px', overflow: 'hidden', minHeight: '320px' }}>
-
-            {/* Background image — @static: change STATIC_MOTIVATION_IMAGE_URL */}
-            <img
-              src={STATIC_MOTIVATION_IMAGE_URL}
-              alt={STATIC_MOTIVATION_IMAGE_ALT}
-              style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', filter: 'grayscale(100%)', opacity: 0.35, mixBlendMode: 'luminosity' }}
-            />
-
-            {/* Gradient overlay */}
-            <div style={{ position: 'absolute', inset: 0, background: `linear-gradient(to top, ${SURFACE} 40%, ${SURFACE}cc 65%, transparent 100%)` }} />
-
-            {/* Text */}
-            <div style={{ position: 'relative', padding: '40px 32px', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', minHeight: '320px' }}>
-
-              {/* @static: edit STATIC_PHILOSOPHY_LABEL */}
-              <span style={{ fontSize: '0.6rem', fontWeight: 700, color: `${PRIMARY}cc`, letterSpacing: '0.4em', textTransform: 'uppercase', display: 'block', marginBottom: '12px' }}>
-                {STATIC_PHILOSOPHY_LABEL}
-              </span>
-
-              {/* @static: edit STATIC_PHILOSOPHY_HEADLINE */}
-              <h2 style={{ margin: 0, fontFamily: "'Space Grotesk', sans-serif", fontSize: 'clamp(1.1rem, 3.5vw, 1.75rem)', fontWeight: 900, lineHeight: 1.15, letterSpacing: '-0.01em', textTransform: 'uppercase', fontStyle: 'italic', color: ON_SURFACE, maxWidth: '680px' }}>
-                {STATIC_PHILOSOPHY_HEADLINE}
-              </h2>
+          {/* Recent PR */}
+          {recentPr && (
+            <div style={{
+              background: C.surfaceContainer,
+              border: `1px solid ${C.outlineVariant}`,
+              borderLeft: `3px solid ${C.primary}`,
+              borderRadius: 16,
+              padding: '16px 18px',
+            }}>
+              <p style={{ margin: '0 0 4px', fontSize: '0.57rem', letterSpacing: '0.22em', textTransform: 'uppercase', color: C.outline, fontWeight: 700 }}>
+                Recent PR
+              </p>
+              <p style={{ margin: '0 0 4px', fontFamily: 'Space Grotesk, sans-serif', fontWeight: 800, fontSize: 16, color: C.onSurface }}>
+                {recentPr.exercise?.name ?? 'Personal Record'}
+              </p>
+              <p style={{ margin: 0, fontSize: 12, color: C.tertiary, fontWeight: 700 }}>
+                {recentPr.value} kg · {new Date(recentPr.achievedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+              </p>
             </div>
-          </section>
-
+          )}
         </main>
       </div>
     </div>

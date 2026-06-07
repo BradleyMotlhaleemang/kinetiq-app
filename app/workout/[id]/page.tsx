@@ -1088,9 +1088,11 @@ export default function WorkoutPage() {
 
   // ── Helpers ──
 
-  function defaultEmptyRows(exerciseId: string): SetRow[] {
+  function defaultEmptyRows(exerciseId: string, setsTarget?: number): SetRow[] {
     const targetSets =
-      useSessionStore.getState().prescriptions[exerciseId]?.setTarget ?? 3;
+      useSessionStore.getState().prescriptions[exerciseId]?.setTarget ??
+      setsTarget ??
+      3;
     return Array.from({ length: targetSets }, (_, i) => ({
       id: `${exerciseId}-${i + 1}`,
       weight: '',
@@ -1099,12 +1101,12 @@ export default function WorkoutPage() {
     }));
   }
 
-  function ensureRows(exerciseId: string) {
+  function ensureRows(exerciseId: string, setsTarget?: number) {
     setSetRows((prev) => {
       if (prev[exerciseId]?.length) return prev;
       return {
         ...prev,
-        [exerciseId]: defaultEmptyRows(exerciseId),
+        [exerciseId]: defaultEmptyRows(exerciseId, setsTarget),
       };
     });
   }
@@ -1672,9 +1674,9 @@ export default function WorkoutPage() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
           {dayExercises.map((exercise) => {
             const rows = setRows[exercise.id] ?? (() => {
-              const defaultRows = defaultEmptyRows(exercise.id);
+              const defaultRows = defaultEmptyRows(exercise.id, exercise.setsTarget);
               // ensure rows are initialized
-              setTimeout(() => ensureRows(exercise.id), 0);
+              setTimeout(() => ensureRows(exercise.id, exercise.setsTarget), 0);
               return defaultRows;
             })();
             const accent = muscleColor(exercise.primaryMuscle);

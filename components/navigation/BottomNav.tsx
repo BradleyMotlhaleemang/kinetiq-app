@@ -1,26 +1,20 @@
 'use client';
 
 import { usePathname, useRouter } from 'next/navigation';
-import { Dumbbell, Layers, LayoutGrid, BookOpen, MoreHorizontal } from 'lucide-react';
+import { Dumbbell, Layers, BookOpen, MoreHorizontal } from 'lucide-react';
 
 const NAV_ITEMS = [
   {
-    label: 'Workout',
+    label: 'Today',
     href: '/dashboard',
     icon: Dumbbell,
     matchPrefixes: ['/dashboard', '/workout', '/readiness'],
   },
   {
-    label: 'Mesocycles',
+    label: 'Program',
     href: '/mesocycles',
     icon: Layers,
     matchPrefixes: ['/mesocycles'],
-  },
-  {
-    label: 'Templates',
-    href: '/templates',
-    icon: LayoutGrid,
-    matchPrefixes: ['/templates'],
   },
   {
     label: 'Exercises',

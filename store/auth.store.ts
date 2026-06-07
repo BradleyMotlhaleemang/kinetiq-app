@@ -1,13 +1,14 @@
 import { create } from 'zustand';
 import { DEV_BYPASS_TOKEN } from '@/lib/auth/devBypass';
 
+const SESSION_COOKIE = 'kinetiq_session=1; path=/; max-age=604800; SameSite=Lax';
+
 interface AuthState {
   accessToken: string | null;
-  refreshToken: string | null;
   userId: string | null;
   email: string | null;
   hydrated: boolean;
-  setTokens: (accessToken: string, refreshToken: string) => void;
+  setAccessToken: (accessToken: string) => void;
   enableDevBypass: () => void;
   setUser: (userId: string, email: string) => void;
   logout: () => void;
@@ -17,29 +18,26 @@ interface AuthState {
 
 export const useAuthStore = create<AuthState>((set, get) => ({
   accessToken: null,
-  refreshToken: null,
   userId: null,
   email: null,
   hydrated: false,
 
   hydrate: () => {
-    const accessToken = localStorage.getItem('accessToken');
-    const refreshToken = localStorage.getItem('refreshToken');
-    set({ accessToken, refreshToken, hydrated: true });
+    const accessToken = sessionStorage.getItem('accessToken');
+    set({ accessToken, hydrated: true });
   },
 
-  setTokens: (accessToken, refreshToken) => {
-    localStorage.setItem('accessToken', accessToken);
-    localStorage.setItem('refreshToken', refreshToken);
-    set({ accessToken, refreshToken });
+  setAccessToken: (accessToken) => {
+    sessionStorage.setItem('accessToken', accessToken);
+    document.cookie = SESSION_COOKIE;
+    set({ accessToken });
   },
 
   enableDevBypass: () => {
-    localStorage.setItem('accessToken', DEV_BYPASS_TOKEN);
-    localStorage.removeItem('refreshToken');
+    sessionStorage.setItem('accessToken', DEV_BYPASS_TOKEN);
+    document.cookie = SESSION_COOKIE;
     set({
       accessToken: DEV_BYPASS_TOKEN,
-      refreshToken: null,
       userId: 'dev-user',
       email: 'dev@local',
     });
@@ -48,9 +46,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   setUser: (userId, email) => set({ userId, email }),
 
   logout: () => {
-    localStorage.removeItem('accessToken');
-    localStorage.removeItem('refreshToken');
-    set({ accessToken: null, refreshToken: null, userId: null, email: null });
+    sessionStorage.removeItem('accessToken');
+    document.cookie = 'kinetiq_session=; path=/; max-age=0';
+    set({ accessToken: null, userId: null, email: null });
   },
 
   isAuthenticated: () => !!get().accessToken,
