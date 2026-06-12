@@ -8,7 +8,7 @@ const NAV_ITEMS = [
     label: 'Today',
     href: '/dashboard',
     icon: Dumbbell,
-    matchPrefixes: ['/dashboard', '/workout', '/readiness'],
+    matchPrefixes: ['/dashboard', '/workout', '/readiness', '/quick-workout'],
   },
   {
     label: 'Program',
@@ -38,6 +38,7 @@ const HIDE_ON_PREFIXES = [
   '/weekly-feedback',
   '/workout/',
   '/biofeedback',
+  '/admin',
 ];
 
 export default function BottomNav() {

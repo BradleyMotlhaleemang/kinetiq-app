@@ -623,3 +623,41 @@ Open [FILE].
 Show me the full diff of every change you plan to make.
 Do NOT apply anything until I approve.
 ```
+
+---
+
+## Workout Execution Reference (extracted from `app/workout/[id]/page.tsx`)
+
+Canonical shared tokens live in `lib/design/workoutTokens.ts` and `lib/design/muscleColors.ts`.
+
+### Card shell
+- Background: `#1e2026` (`surfaceContainer`)
+- Border: `1px solid #3a3c44` (`outlineVariant`)
+- Border radius: `16px`
+- Left accent: `3px solid` muscle-group color (see below)
+- Padding: `16px`
+- Internal gap: `12px`
+
+### Muscle-group accent colors
+| Muscle | Hex |
+|---|---|
+| Chest | `#ff6b6b` |
+| Back / Lats | `#b1c5ff` |
+| Delts | `#59d8de` |
+| Quads | `#6cd68f` |
+| Glutes | `#ff7ac8` |
+| Hamstrings | `#f5d76e` |
+| Biceps | `#b1c5ff` |
+| Triceps | `#59d8de` |
+
+### Typography
+- Exercise name: Space Grotesk 800, ~0.95rem
+- Metadata (muscle, movement): Manrope 500, 0.65rem, uppercase, letter-spacing 0.14em, color `#8e909c`
+- Field labels: Manrope 700, 0.55rem, uppercase, letter-spacing 0.16em
+
+### Set input fields
+- Background: `#161820`
+- Border: `1px solid #3a3c44`
+- Border radius: `10px`
+- Text: Space Grotesk 800, 1rem, centered
+- Padding: `10px 8px`

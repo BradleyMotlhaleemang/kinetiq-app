@@ -234,13 +234,15 @@ export default function RegisterPage() {
           >
             {loading ? 'Creating account...' : 'Create Account'}
           </button>
-          <button
-            type="button"
-            onClick={handleDevBypass}
-            style={ghostBtnStyle}
-          >
-            Continue in Demo Mode
-          </button>
+          {process.env.NODE_ENV === 'development' && (
+            <button
+              type="button"
+              onClick={handleDevBypass}
+              style={ghostBtnStyle}
+            >
+              Continue in Demo Mode
+            </button>
+          )}
         </form>
 
         <p style={{ fontFamily: 'Manrope, sans-serif', fontSize: 12, color: C.outline, marginTop: 32, textAlign: 'center' }}>

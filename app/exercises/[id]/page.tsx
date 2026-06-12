@@ -46,6 +46,7 @@ export default function ExerciseDetailPage() {
 
   const [exercise, setExercise] = useState<ExerciseDetail | null>(null);
   const [sfr, setSfr] = useState<SfrScore>(null);
+  const [substitutions, setSubstitutions] = useState<ExerciseDetail['substitutionPools']>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -54,17 +55,22 @@ export default function ExerciseDetailPage() {
     setError(null);
 
     try {
-      const [exerciseRes, sfrRes] = await Promise.all([
+      const [exerciseRes, sfrRes, subsRes] = await Promise.all([
         exercisesApi.getExercise(id),
         exercisesApi.getExerciseSfr(id),
+        exercisesApi.getExerciseSubstitutions(id),
       ]);
       setExercise(exerciseRes);
-      setSfr(sfrRes);
+      setSfr(
+        sfrRes && typeof sfrRes.sfrScore === 'number' ? sfrRes : null,
+      );
+      setSubstitutions(Array.isArray(subsRes) ? subsRes : []);
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) return;
       setError("Couldn't load exercise.");
       setExercise(null);
       setSfr(null);
+      setSubstitutions([]);
     } finally {
       setLoading(false);
     }
@@ -367,7 +373,7 @@ export default function ExerciseDetailPage() {
                 SFR Score
               </p>
 
-              {sfr ? (
+              {sfr && typeof sfr.sfrScore === 'number' ? (
                 <div>
                   <p
                     style={{
@@ -426,9 +432,9 @@ export default function ExerciseDetailPage() {
                 Substitution Pool
               </p>
 
-              {exercise.substitutionPools && exercise.substitutionPools.length > 0 ? (
+              {substitutions.length > 0 ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {exercise.substitutionPools.map((pool) => {
+                  {substitutions.map((pool) => {
                     const isPrimary = pool.priority === 1;
                     return (
                       <div

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/auth.store';
+import { usersApi } from '@/lib/api/users';
 import api from '@/lib/api/client';
 import { LogOut, ChevronRight, User, Target, Activity } from 'lucide-react';
 
@@ -105,7 +106,6 @@ function ActionRow({
         alignItems: 'center',
         justifyContent: 'space-between',
         padding: '13px 16px',
-        borderBottom: `1px solid ${C.outlineVariant}`,
         background: hovered ? C.surfaceHigh : 'transparent',
         border: 'none',
         borderBottom: `1px solid ${C.outlineVariant}`,
@@ -165,9 +165,12 @@ function SignOutButton({ onClick }: { onClick: () => void }) {
 
 export default function ProfilePage() {
   const router = useRouter();
-  const { logout } = useAuthStore();
+  const { logout, setDisplayName } = useAuthStore();
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [editingName, setEditingName] = useState(false);
+  const [nameDraft, setNameDraft] = useState('');
+  const [savingName, setSavingName] = useState(false);
 
   useEffect(() => {
     loadUser();
@@ -176,7 +179,9 @@ export default function ProfilePage() {
   async function loadUser() {
     try {
       const res = await api.get('/api/v1/users/me');
-      setUser(res.data);
+      const data = res.data;
+      setUser(data);
+      if (data?.displayName) setDisplayName(data.displayName);
     } catch {
       router.push('/auth/login');
     } finally {
@@ -187,6 +192,22 @@ export default function ProfilePage() {
   function handleLogout() {
     logout();
     router.push('/auth/login');
+  }
+
+  async function handleSaveName() {
+    if (!nameDraft.trim() || savingName) return;
+    setSavingName(true);
+    try {
+      const res = await usersApi.updateProfile({ displayName: nameDraft.trim() });
+      const updated = res.data;
+      setUser((prev: any) => ({ ...prev, displayName: updated.displayName }));
+      setDisplayName(updated.displayName);
+      setEditingName(false);
+    } catch {
+      alert('Failed to update name');
+    } finally {
+      setSavingName(false);
+    }
   }
 
   if (loading) {
@@ -299,16 +320,46 @@ export default function ProfilePage() {
           </div>
 
           <div>
-            <p style={{
-              fontFamily: 'Space Grotesk, sans-serif',
-              fontWeight: 800,
-              fontSize: 16,
-              color: C.onSurface,
-              margin: 0,
-              letterSpacing: '-0.02em',
-            }}>
-              {user?.displayName ?? 'Athlete'}
-            </p>
+            {editingName ? (
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <input
+                  value={nameDraft}
+                  onChange={(e) => setNameDraft(e.target.value)}
+                  style={{
+                    flex: 1,
+                    background: C.surfaceLow,
+                    border: `1px solid ${C.outlineVariant}`,
+                    borderRadius: 8,
+                    padding: '8px 10px',
+                    color: C.onSurface,
+                    fontSize: 14,
+                  }}
+                />
+                <button type="button" onClick={handleSaveName} disabled={savingName} style={{ border: 'none', background: C.primary, color: '#05080f', borderRadius: 8, padding: '8px 10px', fontWeight: 800, fontSize: 12, cursor: 'pointer' }}>
+                  Save
+                </button>
+              </div>
+            ) : (
+              <p style={{
+                fontFamily: 'Space Grotesk, sans-serif',
+                fontWeight: 800,
+                fontSize: 16,
+                color: C.onSurface,
+                margin: 0,
+                letterSpacing: '-0.02em',
+              }}>
+                {user?.displayName ?? 'Athlete'}
+              </p>
+            )}
+            {!editingName && (
+              <button
+                type="button"
+                onClick={() => { setNameDraft(user?.displayName ?? ''); setEditingName(true); }}
+                style={{ marginTop: 6, background: 'none', border: 'none', padding: 0, color: C.primary, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
+              >
+                Edit name
+              </button>
+            )}
             <p style={{
               fontFamily: 'Manrope, sans-serif',
               fontSize: 12,

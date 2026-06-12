@@ -1,12 +1,23 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
+import { CheckCircle, Play, Settings } from 'lucide-react';
 import AppHeader from '@/components/AppHeader';
 import { mesocyclesApi } from '@/lib/api/mesocycles';
-import { workoutsApi } from '@/lib/api/workouts';
+import {
+  type ExpandProgram,
+  computeCalendarWeek,
+  computeSessionProgress,
+  computeTodayDayNumber,
+  startMesocycleSession,
+} from '@/lib/programs/sessionNavigation';
+import { templatesApi, type TemplateDetail } from '@/lib/api/templates';
+import StructuralEditWarningModal from '@/components/StructuralEditWarningModal';
+import TrainingDayAccordion, { parsePrescriptionExercises, type TrainingDayItem } from '@/components/TrainingDayAccordion';
+import { exercisesApi } from '@/lib/api/exercises';
 import api, { ApiError } from '@/lib/api/client';
-import { BarChart2, CheckCircle } from 'lucide-react';
+import { TYPE } from '@/lib/design/typography';
 
 const C = {
   primary: '#b1c5ff',
@@ -15,41 +26,42 @@ const C = {
   surface: '#111318',
   surfaceLow: '#161820',
   surfaceContainer: '#1e2026',
+  surfaceContainerLow: '#1a1b21',
   surfaceHigh: '#282a30',
   outline: '#8e909c',
   outlineVariant: '#3a3c44',
   onSurface: '#e2e2e8',
   onSurfaceVariant: '#c5c6d2',
+  buttonText: '#05080f',
 };
 
 const DAY_COLORS = [C.primary, C.tertiary, C.secondary, '#a2e7ff'];
-
-const sectionLabel: React.CSSProperties = {
-  margin: 0,
-  fontSize: '0.57rem',
-  letterSpacing: '0.22em',
-  textTransform: 'uppercase',
-  color: C.outline,
-  fontWeight: 700,
-};
+const VOLUME_COLORS = [C.secondary, C.primary, C.tertiary];
 
 const primaryBtn: React.CSSProperties = {
   width: '100%',
-  padding: '14px 0',
-  borderRadius: 12,
+  padding: '16px 0',
+  borderRadius: 8,
   border: 'none',
   background: `linear-gradient(135deg, ${C.primary} 0%, #3a5cbf 100%)`,
-  color: '#05080f',
+  color: C.buttonText,
   fontFamily: 'Space Grotesk, sans-serif',
   fontWeight: 900,
-  fontSize: 14,
+  fontSize: 16,
+  letterSpacing: '0.02em',
+  textTransform: 'uppercase',
   cursor: 'pointer',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  gap: 12,
+  boxShadow: '0 4px 16px rgba(58,92,191,0.35)',
 };
 
 const ghostBtn: React.CSSProperties = {
   width: '100%',
   padding: '14px 0',
-  borderRadius: 12,
+  borderRadius: 8,
   border: `1px solid ${C.outlineVariant}`,
   background: 'transparent',
   color: C.onSurfaceVariant,
@@ -59,100 +71,53 @@ const ghostBtn: React.CSSProperties = {
   cursor: 'pointer',
 };
 
-type ExpandDay = {
-  id: string;
-  dayNumber: number | null;
-  sessionType: string;
-  date: string;
-  completed: boolean;
-  prescription: unknown;
-};
-
-type ExpandWeek = {
-  weekNumber: number;
-  isDeloadWeek: boolean;
-  label: string;
-  days: ExpandDay[];
-};
-
-type ExpandProgram = {
-  id: string;
-  name: string;
-  status: string;
-  weekCount: number;
-  currentWeek: number;
-  startDate: string;
-  volumeTargets: Record<string, { mev: number; mrv: number; current: number }>;
-  weeks: ExpandWeek[];
-};
-
 type MesocycleRecord = {
   id: string;
   name: string;
   status: string;
   currentWeek: number;
   totalWeeks: number;
+  splitTemplateId?: string;
 };
 
-function computeTodayDayNumber(startDate: string, currentWeek: number): number {
-  const start = new Date(startDate);
-  start.setHours(0, 0, 0, 0);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const weekStart = new Date(start);
-  weekStart.setDate(start.getDate() + (currentWeek - 1) * 7);
-  const diffDays = Math.floor((today.getTime() - weekStart.getTime()) / (1000 * 60 * 60 * 24));
-  if (diffDays < 0) return 1;
-  return (diffDays % 7) + 1;
-}
+type ProgramSlot = {
+  splitDayExerciseId: string;
+  dayLabel: string;
+  exerciseId: string;
+  exerciseName: string;
+};
 
-function findTodayWorkout(program: ExpandProgram): ExpandDay | null {
-  const currentWeek = program.weeks.find((w) => w.weekNumber === program.currentWeek);
-  if (!currentWeek) return null;
-  const todayDayNumber = computeTodayDayNumber(program.startDate, program.currentWeek);
-  return currentWeek.days.find((d) => d.dayNumber === todayDayNumber) ?? null;
-}
+type ExerciseOverride = {
+  splitDayExerciseId: string;
+  substituteExerciseId: string;
+};
 
-function findNextPlannedDay(program: ExpandProgram): ExpandDay | null {
-  const currentWeek = program.weeks.find((w) => w.weekNumber === program.currentWeek);
-  if (!currentWeek) return null;
-  return currentWeek.days.find((d) => !d.completed) ?? null;
-}
-
-function computeSessionProgress(program: ExpandProgram | null): {
-  completed: number;
-  total: number;
-  pct: number;
-} {
-  if (!program?.weeks?.length) return { completed: 0, total: 0, pct: 0 };
-  const allDays = program.weeks.flatMap((w) => w.days);
-  const completed = allDays.filter((d) => d.completed).length;
-  const total = allDays.length;
-  const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
-  return { completed, total, pct };
-}
-
-function computeCalendarWeek(startDate: string, totalWeeks: number): number {
-  const start = new Date(startDate);
-  start.setHours(0, 0, 0, 0);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const diffDays = Math.floor((today.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
-  if (diffDays < 0) return 1;
-  const week = Math.floor(diffDays / 7) + 1;
-  return Math.min(Math.max(week, 1), totalWeeks);
+function formatWeekdayLabel(dateStr: string, isToday: boolean): string {
+  const weekday = new Date(dateStr).toLocaleDateString('en-US', { weekday: 'long' }).toUpperCase();
+  return isToday ? `${weekday} — TODAY` : weekday;
 }
 
 export default function MesocycleDetailPage() {
   const router = useRouter();
   const params = useParams();
   const id = params.id as string;
+  const editSectionRef = useRef<HTMLDivElement>(null);
 
   const [mesocycle, setMesocycle] = useState<MesocycleRecord | null>(null);
   const [program, setProgram] = useState<ExpandProgram | null>(null);
-  const [volumeTargets, setVolumeTargets] = useState<Record<string, { mev: number; mrv: number; current: number }>>({});
+  const [volumeTargets, setVolumeTargets] = useState<Record<string, { mev: number; mrv: number; prescribed: number; current?: number }>>({});
+  const [volumeActual, setVolumeActual] = useState<Record<string, { thisWeek: number; blockTotal: number }>>({});
+  const [experienceLevel, setExperienceLevel] = useState('INTERMEDIATE');
+  const [showStructuralModal, setShowStructuralModal] = useState(false);
   const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState(false);
+  const [showEditProgram, setShowEditProgram] = useState(false);
+  const [programSlots, setProgramSlots] = useState<ProgramSlot[]>([]);
+  const [overrides, setOverrides] = useState<ExerciseOverride[]>([]);
+  const [selectedSlotId, setSelectedSlotId] = useState('');
+  const [substituteOptions, setSubstituteOptions] = useState<Array<{ id: string; name: string }>>([]);
+  const [selectedSubstituteId, setSelectedSubstituteId] = useState('');
+  const [overrideSubmitting, setOverrideSubmitting] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -160,15 +125,24 @@ export default function MesocycleDetailPage() {
 
   async function loadData() {
     try {
-      const [mRes, vRes, expandRes] = await Promise.allSettled([
+      const [mRes, vRes, expandRes, userRes] = await Promise.allSettled([
         mesocyclesApi.findOne(id),
         mesocyclesApi.volumeStatus(id),
         api.get(`/api/v1/mesocycles/${id}/expand`),
+        api.get('/api/v1/users/me'),
       ]);
       if (mRes.status === 'fulfilled') setMesocycle(mRes.value.data as MesocycleRecord);
       if (vRes.status === 'fulfilled') {
-        const data = vRes.value.data as { volumeTargets?: typeof volumeTargets };
+        const data = vRes.value.data as {
+          volumeTargets?: typeof volumeTargets;
+          volumeActual?: typeof volumeActual;
+        };
         setVolumeTargets(data.volumeTargets ?? {});
+        setVolumeActual(data.volumeActual ?? {});
+      }
+      if (userRes.status === 'fulfilled') {
+        const level = (userRes.value.data as { experienceLevel?: string })?.experienceLevel;
+        if (level) setExperienceLevel(level);
       }
       if (expandRes.status === 'fulfilled') setProgram(expandRes.value.data as ExpandProgram);
     } catch (err) {
@@ -183,20 +157,129 @@ export default function MesocycleDetailPage() {
     if (!mesocycle || !program || starting) return;
     setStarting(true);
     try {
-      const todayWorkout = findTodayWorkout(program);
-      const targetDay = todayWorkout && !todayWorkout.completed ? todayWorkout : findNextPlannedDay(program);
-
-      if (targetDay?.id) {
-        router.push(`/workout/${targetDay.id}`);
-        return;
-      }
-
-      const res = await workoutsApi.create({ mesocycleId: mesocycle.id });
-      router.push(`/workout/${res.data.id}`);
+      const workoutId = await startMesocycleSession(mesocycle.id, program);
+      router.push(`/workout/${workoutId}`);
     } catch (err) {
       console.error('Failed to start workout', err);
     } finally {
       setStarting(false);
+    }
+  }
+
+  async function loadEditProgramData(meso: MesocycleRecord) {
+    if (!meso.splitTemplateId) return;
+    try {
+      const [templateRes, overridesRes] = await Promise.all([
+        templatesApi.findOne(meso.splitTemplateId),
+        mesocyclesApi.listExerciseOverrides(meso.id),
+      ]);
+      const template = templateRes.data as TemplateDetail;
+      const slots: ProgramSlot[] = [];
+      for (const config of template.splitConfigs ?? []) {
+        for (const day of config.days) {
+          if (day.exercises.length === 0) continue;
+          for (const entry of day.exercises) {
+            const slotId = (entry as { id?: string }).id;
+            const exercise = entry.exercise;
+            if (!slotId || !exercise) continue;
+            slots.push({
+              splitDayExerciseId: slotId,
+              dayLabel: day.label,
+              exerciseId: exercise.id,
+              exerciseName: exercise.name,
+            });
+          }
+        }
+      }
+      setProgramSlots(slots);
+      setOverrides(
+        Array.isArray(overridesRes.data)
+          ? (overridesRes.data as ExerciseOverride[])
+          : [],
+      );
+    } catch (err) {
+      console.error('Failed to load program editor', err);
+    }
+  }
+
+  function handleOpenStructuralEdit() {
+    if (experienceLevel === 'BEGINNER') return;
+    setShowStructuralModal(true);
+  }
+
+  async function handleNewFromProgress() {
+    if (!mesocycle?.splitTemplateId) return;
+    try {
+      const forkRes = await templatesApi.fork(mesocycle.splitTemplateId);
+      const forkedId = (forkRes.data as { id?: string })?.id;
+      if (!forkedId) return;
+      await mesocyclesApi.close(id);
+      setShowStructuralModal(false);
+      router.push(`/templates/${forkedId}/edit`);
+    } catch {
+      alert('Failed to create new block from progress');
+    }
+  }
+
+  async function handleForceEdit() {
+    if (!mesocycle?.splitTemplateId) return;
+    setShowStructuralModal(false);
+    router.push(`/templates/${mesocycle.splitTemplateId}/edit?mesocycleId=${id}&structural=1`);
+  }
+
+  async function handleToggleEditProgram() {
+    const next = !showEditProgram;
+    setShowEditProgram(next);
+    if (next && mesocycle) {
+      await loadEditProgramData(mesocycle);
+    }
+  }
+
+  function scrollToEditProgram() {
+    setShowEditProgram(true);
+    if (mesocycle) void loadEditProgramData(mesocycle);
+    requestAnimationFrame(() => {
+      editSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }
+
+  async function handleSlotSelect(slotId: string) {
+    setSelectedSlotId(slotId);
+    setSelectedSubstituteId('');
+    const slot = programSlots.find((s) => s.splitDayExerciseId === slotId);
+    if (!slot) {
+      setSubstituteOptions([]);
+      return;
+    }
+    try {
+      const pools = await exercisesApi.getExerciseSubstitutions(slot.exerciseId);
+      const options = pools.map((pool) => ({
+        id: pool.exercise.id,
+        name: pool.exercise.name,
+      }));
+      setSubstituteOptions(options);
+    } catch {
+      setSubstituteOptions([]);
+    }
+  }
+
+  async function handleApplyOverride() {
+    if (!mesocycle || !selectedSlotId || !selectedSubstituteId || overrideSubmitting) return;
+    setOverrideSubmitting(true);
+    try {
+      await mesocyclesApi.createExerciseOverride(mesocycle.id, {
+        splitDayExerciseId: selectedSlotId,
+        substituteExerciseId: selectedSubstituteId,
+        scope: 'REMAINING_BLOCK',
+        source: 'MANUAL',
+      });
+      await loadEditProgramData(mesocycle);
+      setSelectedSubstituteId('');
+    } catch (err) {
+      console.error('Failed to apply override', err);
+      alert('Failed to update program');
+    } finally {
+      setOverrideSubmitting(false);
     }
   }
 
@@ -235,171 +318,355 @@ export default function MesocycleDetailPage() {
   const displayWeek = program
     ? computeCalendarWeek(program.startDate, mesocycle.totalWeeks)
     : mesocycle.currentWeek;
+  const weeksLeft = Math.max(mesocycle.totalWeeks - displayWeek, 0);
 
-  const muscles = Object.entries(volumeTargets) as [string, { mev: number; mrv: number; current: number }][];
+  const muscles = Object.entries(volumeTargets) as [string, { mev: number; mrv: number; prescribed: number; current?: number }][];
   const currentWeekData = program?.weeks.find((w) => w.weekNumber === displayWeek);
+  const todayDayNumber = program
+    ? computeTodayDayNumber(program.startDate, displayWeek)
+    : null;
+
+  const weekDays: TrainingDayItem[] =
+    currentWeekData?.days.map((day, index) => {
+      const isToday = day.dayNumber === todayDayNumber;
+      return {
+        id: day.id,
+        label: day.date
+          ? formatWeekdayLabel(day.date, isToday)
+          : `DAY ${day.dayNumber}${isToday ? ' — TODAY' : ''}`,
+        subtitle: day.dayLabel ?? day.sessionType,
+        completed: day.completed,
+        isToday,
+        accentColor: DAY_COLORS[index % DAY_COLORS.length],
+        exercises: parsePrescriptionExercises(day.prescription),
+      };
+    }) ?? [];
 
   return (
-    <div style={{ minHeight: '100dvh', backgroundColor: C.surface, paddingBottom: 96 }}>
+    <div style={{ minHeight: '100dvh', backgroundColor: C.surface, paddingBottom: 110 }}>
       <AppHeader title={mesocycle.name} showBack backHref="/mesocycles" />
 
-      <div style={{ maxWidth: 600, margin: '0 auto', padding: '0 20px' }}>
+      <main style={{ maxWidth: 600, margin: '0 auto', padding: '16px 16px 0', display: 'flex', flexDirection: 'column', gap: 24 }}>
 
-        {/* Status + progress */}
-        <div style={{
-          background: C.surfaceContainer,
-          border: `1px solid ${C.outlineVariant}`,
-          borderLeft: `3px solid ${C.tertiary}`,
-          borderRadius: 16,
-          padding: '18px 20px',
-          marginBottom: 12,
-        }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-            <div>
-              <p style={{ ...sectionLabel, color: C.tertiary, marginBottom: 4 }}>{mesocycle.status}</p>
-              <p style={{ margin: 0, fontFamily: 'Space Grotesk, sans-serif', fontSize: '1.5rem', fontWeight: 900, letterSpacing: '-0.04em', color: C.onSurface }}>
-                Week {displayWeek}
-                <span style={{ fontSize: '0.875rem', color: C.outline, fontWeight: 400 }}> · {sessionProgress.completed} of {sessionProgress.total || '—'} sessions</span>
-              </p>
-            </div>
-            <div style={{ textAlign: 'right' }}>
-              <p style={{ margin: 0, fontFamily: 'Space Grotesk, sans-serif', fontSize: '2rem', fontWeight: 900, letterSpacing: '-0.04em', color: C.primary }}>
-                {progressPct}%
-              </p>
-              <p style={{ margin: 0, fontSize: '0.57rem', color: C.outline, letterSpacing: '0.16em', textTransform: 'uppercase', fontWeight: 700 }}>Complete</p>
-            </div>
-          </div>
-          <div style={{ height: 4, backgroundColor: C.surfaceHigh, borderRadius: 9999, overflow: 'hidden' }}>
-            <div style={{
-              height: '100%',
-              width: `${progressPct}%`,
-              background: `linear-gradient(90deg, ${C.primary}, ${C.tertiary})`,
-              borderRadius: 9999,
-              transition: 'width 0.6s ease',
-            }} />
-          </div>
-        </div>
-
-        {/* Week/day grid */}
-        {currentWeekData && (
-          <div style={{
+        {/* Status card */}
+        <section
+          style={{
             background: C.surfaceContainer,
             border: `1px solid ${C.outlineVariant}`,
-            borderRadius: 16,
-            padding: '18px 20px',
-            marginBottom: 12,
-          }}>
-            <p style={{ ...sectionLabel, marginBottom: 12 }}>{currentWeekData.label}</p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-              {currentWeekData.days.map((day, i) => {
-                const color = DAY_COLORS[i % DAY_COLORS.length]!;
-                return (
-                  <div key={day.id} style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    background: C.surfaceLow,
-                    borderRadius: 10,
-                    padding: '11px 14px',
-                    borderLeft: `3px solid ${day.completed ? C.outline : color}`,
-                    opacity: day.completed ? 0.6 : 1,
-                  }}>
-                    <span style={{ fontSize: 13, fontWeight: 600, color: C.onSurface }}>
-                      Day {day.dayNumber}: {day.sessionType}
-                    </span>
-                    <span style={{ fontSize: 11, color: day.completed ? C.outline : color, fontWeight: 800 }}>
-                      {day.completed ? 'Done' : '→'}
-                    </span>
-                  </div>
-                );
-              })}
+            borderRadius: 8,
+            padding: 16,
+            overflow: 'hidden',
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
+            <div>
+              <span style={{ ...TYPE.labelCaps, color: C.onSurfaceVariant, display: 'block', marginBottom: 4 }}>
+                Current Status
+              </span>
+              <h2 style={{ ...TYPE.headlineMd, color: C.primary, margin: 0 }}>
+                Week {displayWeek} of {mesocycle.totalWeeks}
+              </h2>
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <span style={{ ...TYPE.labelCaps, color: C.onSurfaceVariant, display: 'block', marginBottom: 4 }}>
+                Completion
+              </span>
+              <span style={{ ...TYPE.headlineSm, color: C.secondary }}>
+                {sessionProgress.completed}/{sessionProgress.total || '—'} Sessions
+              </span>
             </div>
           </div>
+          <div style={{ height: 6, width: '100%', background: C.surfaceHigh, borderRadius: 9999, overflow: 'hidden' }}>
+            <div
+              style={{
+                height: '100%',
+                width: `${progressPct}%`,
+                background: `linear-gradient(135deg, ${C.primary} 0%, #3a5cbf 100%)`,
+                borderRadius: 9999,
+                transition: 'width 0.7s ease-out',
+              }}
+            />
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}>
+            <span style={{ ...TYPE.labelMeta, color: C.outline }}>
+              {progressPct}% of block complete
+            </span>
+            <span style={{ ...TYPE.labelMeta, color: C.outline }}>
+              {weeksLeft === 1 ? 'Est. 1 week left' : `Est. ${weeksLeft} weeks left`}
+            </span>
+          </div>
+        </section>
+
+        {/* Primary CTA */}
+        {mesocycle.status === 'ACTIVE' && (
+          <button
+            type="button"
+            onClick={handleStartToday}
+            disabled={starting}
+            style={{
+              ...primaryBtn,
+              opacity: starting ? 0.7 : 1,
+              cursor: starting ? 'not-allowed' : 'pointer',
+            }}
+          >
+            <Play size={20} fill={C.buttonText} color={C.buttonText} />
+            {starting ? 'Starting...' : "Start Today's Session"}
+          </button>
+        )}
+
+        {/* Week schedule */}
+        {currentWeekData && weekDays.length > 0 && (
+          <section style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <h3 style={{ ...TYPE.headlineSm, color: C.onSurface, margin: 0 }}>Week Schedule</h3>
+              <button
+                type="button"
+                style={{
+                  ...TYPE.labelMeta,
+                  color: C.primary,
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  padding: 0,
+                }}
+              >
+                View Month
+              </button>
+            </div>
+            <TrainingDayAccordion
+              days={weekDays}
+              variant="blockDetail"
+              onEditSession={scrollToEditProgram}
+            />
+          </section>
         )}
 
         {/* Volume targets */}
         {muscles.length > 0 && (
-          <div style={{
-            background: C.surfaceContainer,
-            border: `1px solid ${C.outlineVariant}`,
-            borderRadius: 16,
-            padding: '18px 20px',
-            marginBottom: 12,
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
-              <BarChart2 size={14} color={C.primary} />
-              <p style={{ ...sectionLabel, color: C.primary }}>Volume targets</p>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {muscles.map(([muscle, targets]) => {
-                const currentPct = targets.mrv > targets.mev
-                  ? Math.min(((targets.current - targets.mev) / (targets.mrv - targets.mev)) * 100, 100)
-                  : 0;
+          <section style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <h3 style={{ ...TYPE.headlineSm, color: C.onSurface, margin: 0 }}>Weekly Volume Targets</h3>
+            <div
+              style={{
+                background: C.surfaceContainer,
+                border: `1px solid ${C.outlineVariant}`,
+                borderRadius: 8,
+                padding: 16,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 16,
+              }}
+            >
+              {muscles.map(([muscle, targets], index) => {
+                const logged = volumeActual[muscle]?.thisWeek ?? 0;
+                const prescribed = targets.prescribed ?? targets.current ?? 0;
+                const barPct = prescribed > 0 ? Math.min((logged / prescribed) * 100, 100) : 0;
+                const barColor = VOLUME_COLORS[index % VOLUME_COLORS.length]!;
                 return (
-                  <div key={muscle}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                      <p style={{ margin: 0, fontFamily: 'Manrope, sans-serif', fontSize: 12, color: C.onSurfaceVariant, textTransform: 'capitalize' }}>
-                        {muscle.replace('_', ' ').toLowerCase()}
-                      </p>
-                      <p style={{ margin: 0, fontFamily: 'Manrope, sans-serif', fontSize: 12, color: C.outline }}>
-                        {targets.current} sets · MEV {targets.mev} / MRV {targets.mrv}
-                      </p>
+                  <div key={muscle} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', ...TYPE.labelMeta }}>
+                      <span style={{ color: C.onSurface, textTransform: 'uppercase' }}>
+                        {muscle.replace(/_/g, ' ')}
+                      </span>
+                      <span style={{ color: barColor }}>
+                        {logged}/{prescribed} Sets
+                      </span>
                     </div>
-                    <div style={{ height: 2, backgroundColor: C.surfaceHigh, borderRadius: 9999 }}>
-                      <div style={{
-                        height: '100%',
-                        width: `${currentPct}%`,
-                        backgroundColor: currentPct >= 90 ? '#ff6b6b' : currentPct >= 60 ? '#a2e7ff' : C.primary,
-                        borderRadius: 9999,
-                      }} />
+                    <div style={{ height: 4, background: C.surfaceHigh, borderRadius: 9999 }}>
+                      <div
+                        style={{
+                          height: '100%',
+                          width: `${barPct}%`,
+                          background: barColor,
+                          borderRadius: 9999,
+                          transition: 'width 0.5s ease',
+                        }}
+                      />
                     </div>
                   </div>
                 );
               })}
             </div>
-          </div>
+          </section>
         )}
 
-        {/* Actions */}
+        {/* Edit program structure */}
         {mesocycle.status === 'ACTIVE' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
+          <section ref={editSectionRef}>
             <button
               type="button"
-              onClick={handleStartToday}
-              disabled={starting}
+              onClick={handleToggleEditProgram}
               style={{
-                ...primaryBtn,
-                opacity: starting ? 0.7 : 1,
-                cursor: starting ? 'not-allowed' : 'pointer',
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: 16,
+                background: C.surfaceLow,
+                border: `1px solid ${C.outlineVariant}`,
+                borderRadius: 8,
+                cursor: 'pointer',
               }}
             >
-              {starting ? 'Starting...' : "Start today's session"}
+              <span style={{ ...TYPE.labelCaps, color: C.outline }}>Edit Program Structure</span>
+              <Settings size={18} color={C.outline} />
             </button>
-            <button type="button" onClick={handleClose} style={ghostBtn}>
-              Mark as completed
-            </button>
-          </div>
+            {showEditProgram && (
+              <div
+                style={{
+                  marginTop: 8,
+                  padding: 16,
+                  background: C.surfaceContainerLow,
+                  border: `1px solid ${C.outlineVariant}`,
+                  borderRadius: 8,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 16,
+                }}
+              >
+                <p style={{ ...TYPE.bodyMd, color: C.onSurfaceVariant, margin: 0 }}>
+                  Modify exercises, frequency, and deload parameters for this block.
+                </p>
+
+                {overrides.length > 0 && (
+                  <div>
+                    <p style={{ ...TYPE.labelCaps, color: C.outline, margin: '0 0 8px' }}>Active swaps</p>
+                    {overrides.map((override) => {
+                      const slot = programSlots.find((s) => s.splitDayExerciseId === override.splitDayExerciseId);
+                      return (
+                        <p key={override.splitDayExerciseId} style={{ margin: '0 0 4px', ...TYPE.labelMeta, color: C.onSurfaceVariant }}>
+                          {slot?.exerciseName ?? 'Slot'} → substitute applied
+                        </p>
+                      );
+                    })}
+                  </div>
+                )}
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                  <button
+                    type="button"
+                    style={{
+                      padding: '12px 16px',
+                      background: C.surfaceHigh,
+                      border: `1px solid ${C.outlineVariant}`,
+                      borderRadius: 4,
+                      ...TYPE.labelCaps,
+                      color: C.onSurface,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Swap Exercises
+                  </button>
+                  {experienceLevel !== 'BEGINNER' && (
+                    <button
+                      type="button"
+                      onClick={handleOpenStructuralEdit}
+                      style={{
+                        padding: '12px 16px',
+                        background: C.surfaceHigh,
+                        border: `1px solid ${C.outlineVariant}`,
+                        borderRadius: 4,
+                        ...TYPE.labelCaps,
+                        color: C.onSurface,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Adjust Deload
+                    </button>
+                  )}
+                </div>
+
+                <select
+                  value={selectedSlotId}
+                  onChange={(e) => handleSlotSelect(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    borderRadius: 8,
+                    border: `1px solid ${C.outlineVariant}`,
+                    background: C.surfaceLow,
+                    color: C.onSurface,
+                    fontFamily: 'Manrope, sans-serif',
+                    fontSize: 13,
+                  }}
+                >
+                  <option value="">Select exercise slot…</option>
+                  {programSlots.map((slot) => (
+                    <option key={slot.splitDayExerciseId} value={slot.splitDayExerciseId}>
+                      {slot.dayLabel}: {slot.exerciseName}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={selectedSubstituteId}
+                  onChange={(e) => setSelectedSubstituteId(e.target.value)}
+                  disabled={!selectedSlotId || substituteOptions.length === 0}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    borderRadius: 8,
+                    border: `1px solid ${C.outlineVariant}`,
+                    background: C.surfaceLow,
+                    color: C.onSurface,
+                    fontFamily: 'Manrope, sans-serif',
+                    fontSize: 13,
+                  }}
+                >
+                  <option value="">Select substitute…</option>
+                  {substituteOptions.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.name}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={handleApplyOverride}
+                  disabled={!selectedSlotId || !selectedSubstituteId || overrideSubmitting}
+                  style={{
+                    ...ghostBtn,
+                    borderColor: C.primary,
+                    color: C.primary,
+                    opacity: overrideSubmitting ? 0.6 : 1,
+                  }}
+                >
+                  {overrideSubmitting ? 'Applying…' : 'Apply for rest of block'}
+                </button>
+                <button type="button" onClick={handleClose} style={ghostBtn}>
+                  Mark as completed
+                </button>
+              </div>
+            )}
+          </section>
         )}
 
         {mesocycle.status === 'COMPLETED' && (
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            padding: '14px 16px',
-            background: `rgba(89,216,222,0.07)`,
-            border: `1px solid rgba(89,216,222,0.2)`,
-            borderLeft: `3px solid ${C.tertiary}`,
-            borderRadius: 12,
-            marginTop: 8,
-          }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '14px 16px',
+              background: 'rgba(89,216,222,0.07)',
+              border: '1px solid rgba(89,216,222,0.2)',
+              borderLeft: `3px solid ${C.tertiary}`,
+              borderRadius: 8,
+            }}
+          >
             <CheckCircle size={14} color={C.tertiary} />
             <p style={{ margin: 0, fontFamily: 'Manrope, sans-serif', fontSize: 12, fontWeight: 700, color: C.tertiary }}>
               Block completed
             </p>
           </div>
         )}
-      </div>
+      </main>
+
+      {showStructuralModal && (
+        <StructuralEditWarningModal
+          onKeep={() => setShowStructuralModal(false)}
+          onNewFromProgress={handleNewFromProgress}
+          onForceEdit={handleForceEdit}
+        />
+      )}
     </div>
   );
 }

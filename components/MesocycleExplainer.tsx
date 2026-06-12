@@ -1,5 +1,9 @@
 'use client';
 
+import { useState } from 'react';
+import { ChevronDown } from 'lucide-react';
+import { TYPE } from '@/lib/design/typography';
+
 const C = {
   primary: '#b1c5ff',
   surface: '#111318',
@@ -14,42 +18,125 @@ const C = {
 
 export const MESO_EXPLAINER_STORAGE_KEY = 'kinetiq_seen_meso_explainer';
 
+const EXPLAINER_SECTIONS = [
+  {
+    title: 'What is a mesocycle?',
+    body: 'A mesocycle is a structured training block — one chapter of your training story. You repeat the same weekly split while the app adapts load, reps, and recovery week to week.',
+  },
+  {
+    title: 'Typical duration',
+    body: 'Most blocks run 4–12 weeks. Shorter blocks suit skill or peaking phases; longer blocks suit hypertrophy accumulation.',
+  },
+  {
+    title: 'Volume vs intensity phases',
+    body: 'Early weeks bias more total sets at moderate effort (volume accumulation). Middle weeks push load and effort (intensification). The final week reduces fatigue before your next block.',
+  },
+  {
+    title: 'Deload purpose',
+    body: 'The deload week lowers stress so joints, tendons, and the nervous system recover. You keep training, but with less volume and intensity so the next block starts fresh.',
+  },
+];
+
 export function MesocycleExplainerContent() {
   return (
     <>
-      <h2 style={{
-        margin: '0 0 12px',
-        fontFamily: 'Space Grotesk, sans-serif',
-        fontWeight: 900,
-        fontSize: 19,
-        letterSpacing: '-0.04em',
-        color: C.onSurface,
-      }}>
+      <h2
+        style={{
+          margin: '0 0 12px',
+          ...TYPE.headlineMd,
+          fontWeight: 900,
+          fontSize: 19,
+          color: C.onSurface,
+        }}
+      >
         What&apos;s a training block?
       </h2>
-      <p style={{
-        margin: 0,
-        fontFamily: 'Manrope, sans-serif',
-        fontSize: 14,
-        lineHeight: 1.65,
-        color: C.onSurface,
-        fontWeight: 500,
-      }}>
-        A mesocycle is a training block — typically 4–12 weeks — where you follow a structured plan that gradually increases in difficulty. Think of it as one chapter of your overall training story. Each week follows the same split, but the app adapts your weights and reps as you go, with a lighter deload week at the end. Tracking your progress across a full block is how the app learns your body and makes smarter decisions for your next session.
+      <p
+        style={{
+          margin: 0,
+          ...TYPE.bodyMd,
+          lineHeight: 1.65,
+          color: C.onSurface,
+        }}
+      >
+        {EXPLAINER_SECTIONS[0].body}
       </p>
     </>
   );
 }
 
+export function MesocycleExplainerAccordion() {
+  const [open, setOpen] = useState(false);
+  return (
+    <section style={{ borderTop: `1px solid ${C.outlineVariant}`, paddingTop: 24, marginTop: 8 }}>
+      <div
+        style={{
+          background: C.surfaceLow,
+          border: `1px solid rgba(58,60,68,0.3)`,
+          borderRadius: 8,
+          overflow: 'hidden',
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          style={{
+            width: '100%',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            padding: 16,
+            background: 'transparent',
+            border: 'none',
+            cursor: 'pointer',
+            color: C.onSurface,
+            textAlign: 'left',
+          }}
+        >
+          <span
+            style={{
+              ...TYPE.bodyLg,
+              fontWeight: 700,
+            }}
+          >
+            What is a mesocycle?
+          </span>
+          <ChevronDown
+            size={20}
+            style={{
+              flexShrink: 0,
+              color: C.onSurfaceVariant,
+              transform: open ? 'rotate(180deg)' : 'rotate(0deg)',
+              transition: 'transform 0.3s ease',
+            }}
+          />
+        </button>
+        {open && (
+          <div style={{ padding: '0 16px 16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {EXPLAINER_SECTIONS.map((section) => (
+              <div key={section.title}>
+                <p style={{ margin: '0 0 4px', fontSize: 12, fontWeight: 800, color: C.onSurface }}>{section.title}</p>
+                <p style={{ margin: 0, fontSize: 12, lineHeight: 1.6, color: C.onSurfaceVariant }}>{section.body}</p>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
 export function MesocycleExplainerInline({ onDismiss }: { onDismiss: () => void }) {
   return (
-    <div style={{
-      background: C.surfaceLow,
-      border: `1px solid ${C.outlineVariant}`,
-      borderRadius: 14,
-      padding: '18px 20px',
-      marginBottom: 22,
-    }}>
+    <div
+      style={{
+        background: C.surfaceLow,
+        border: `1px solid ${C.outlineVariant}`,
+        borderRadius: 14,
+        padding: '18px 20px',
+        marginBottom: 22,
+      }}
+    >
       <MesocycleExplainerContent />
       <button
         type="button"
@@ -62,8 +149,7 @@ export function MesocycleExplainerInline({ onDismiss }: { onDismiss: () => void 
           border: 'none',
           background: `linear-gradient(135deg, ${C.primary} 0%, #3a5cbf 100%)`,
           color: '#05080f',
-          fontFamily: 'Space Grotesk, sans-serif',
-          fontWeight: 900,
+          ...TYPE.titleCta,
           fontSize: 14,
           cursor: 'pointer',
         }}
@@ -111,8 +197,7 @@ export function MesocycleExplainerSheet({ onDismiss }: { onDismiss: () => void }
               border: 'none',
               background: `linear-gradient(135deg, ${C.primary} 0%, #3a5cbf 100%)`,
               color: '#05080f',
-              fontFamily: 'Space Grotesk, sans-serif',
-              fontWeight: 900,
+              ...TYPE.titleCta,
               fontSize: 15,
               cursor: 'pointer',
             }}

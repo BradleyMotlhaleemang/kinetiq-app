@@ -98,8 +98,12 @@ export default function LoginPage() {
     try {
       await authApi.resendVerification(normalizedEmail);
       setResendMessage('Verification email sent — check your inbox');
-    } catch {
-      setResendMessage('Could not resend — try again');
+    } catch (err) {
+      const message =
+        err instanceof ApiError
+          ? err.message
+          : 'Could not resend — try again';
+      setResendMessage(message);
     } finally {
       setResending(false);
     }
@@ -123,8 +127,9 @@ export default function LoginPage() {
       setUser('', normalizedEmail);
       try {
         const meRes = await api.get('/api/v1/users/me');
-        const { onboardingCompletedAt, id, email: userEmail } = meRes?.data ?? {};
-        if (id && userEmail) setUser(id, userEmail);
+        const { onboardingCompletedAt, id, email: userEmail, displayName, role } = meRes?.data ?? {};
+        const userRole = role === 'ADMIN' ? 'ADMIN' : 'USER';
+        if (id && userEmail) setUser(id, userEmail, displayName ?? null, userRole);
         if (!onboardingCompletedAt) {
           router.push('/onboarding');
           return;

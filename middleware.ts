@@ -9,6 +9,7 @@ const PROTECTED_PREFIXES = [
   '/workouts',
   '/onboarding',
   '/settings',
+  '/admin',
 ];
 
 export function middleware(request: NextRequest) {
@@ -34,6 +35,15 @@ export function middleware(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
+  if (pathname.startsWith('/admin')) {
+    const role = request.cookies.get('kinetiq_role')?.value;
+    if (role !== 'ADMIN') {
+      const moreUrl = request.nextUrl.clone();
+      moreUrl.pathname = '/more';
+      return NextResponse.redirect(moreUrl);
+    }
+  }
+
   return NextResponse.next();
 }
 
@@ -46,5 +56,7 @@ export const config = {
     '/workouts/:path*',
     '/onboarding/:path*',
     '/settings/:path*',
+    '/admin',
+    '/admin/:path*',
   ],
 };

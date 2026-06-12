@@ -50,10 +50,14 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   sets: {},
   prescriptions: {},
 
-  setWorkoutId: (id) =>
-    set({
-      workoutId: id,
-    }),
+  setWorkoutId: (id) => {
+    const prev = get().workoutId;
+    if (prev !== id) {
+      set({ workoutId: id, prescriptions: {} });
+    } else {
+      set({ workoutId: id });
+    }
+  },
 
   addSet: (exerciseId, newSet) => {
     set((state) => ({

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { exercisesApi, type Exercise } from '@/lib/api/exercises';
 import { ApiError } from '@/lib/api/client';
@@ -33,8 +33,7 @@ const MUSCLE_OPTIONS = [
   'HAMSTRINGS',
   'GLUTES',
   'CALVES',
-  'ABS',
-  'TRAPS',
+  'LATS',
 ] as const;
 
 const PATTERN_OPTIONS = [
@@ -47,6 +46,20 @@ const PATTERN_OPTIONS = [
   'ISOLATION',
   'CORE',
 ] as const;
+
+// muscle → accent color map — same coordination as the workout execution page
+const muscleColor = (muscle: string | null | undefined): string => {
+  if (!muscle) return C.outline;
+  if (muscle.includes('CHEST'))                      return '#ff6b6b'; // warm red
+  if (muscle.includes('BACK'))                       return C.primary; // brand blue
+  if (muscle.includes('DELT') || muscle.includes('SHOULDER')) return C.tertiary; // teal
+  if (muscle.includes('QUAD'))                       return '#6cd68f'; // green
+  if (muscle.includes('GLUTE'))                      return '#ff7ac8'; // pink
+  if (muscle.includes('HAMSTRING'))                  return '#f5d76e'; // gold
+  if (muscle.includes('BICEP'))                      return '#b1c5ff'; // primary
+  if (muscle.includes('TRICEP'))                     return '#59d8de'; // tertiary
+  return C.tertiary;
+};
 
 function SearchIcon({ size = 16, color = C.outline }: { size?: number; color?: string }) {
   return (
@@ -72,6 +85,14 @@ function ChevronRight({ color = C.outline }: { color?: string }) {
 }
 
 export default function ExercisesPage() {
+  return (
+    <Suspense fallback={<p style={{ padding: 24, color: '#8e909c' }}>Loading exercises…</p>}>
+      <ExercisesPageContent />
+    </Suspense>
+  );
+}
+
+function ExercisesPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const selectMode = searchParams.get('select') === 'true';
@@ -137,6 +158,11 @@ export default function ExercisesPage() {
 
   function handleSelectExercise(exerciseId: string) {
     sessionStorage.setItem('kinetiq_selected_exercise', exerciseId);
+    const returnTo = searchParams.get('returnTo');
+    if (returnTo) {
+      router.push(returnTo);
+      return;
+    }
     router.back();
   }
 
@@ -381,7 +407,9 @@ export default function ExercisesPage() {
 
           {!loading &&
             !error &&
-            visibleItems.map((exercise) => (
+            visibleItems.map((exercise) => {
+              const accent = muscleColor(exercise.primaryMuscle);
+              return (
               <button
                 key={exercise.id}
                 onClick={() => {
@@ -394,7 +422,7 @@ export default function ExercisesPage() {
                 style={{
                   background: C.surfaceContainer,
                   border: `1px solid ${C.outlineVariant}`,
-                  borderLeft: `3px solid ${C.primary}`,
+                  borderLeft: `3px solid ${accent}`,
                   borderRadius: 16,
                   padding: '14px 14px',
                   cursor: 'pointer',
@@ -420,7 +448,7 @@ export default function ExercisesPage() {
                         fontSize: 10,
                         fontWeight: 700,
                         color: C.surface,
-                        background: C.primary,
+                        background: accent,
                         borderRadius: 6,
                         padding: '3px 8px',
                         letterSpacing: '0.06em',
@@ -505,7 +533,8 @@ export default function ExercisesPage() {
                   </span>
                 )}
               </button>
-            ))}
+              );
+            })}
 
           {noResultsAfterFilters && (
             <div

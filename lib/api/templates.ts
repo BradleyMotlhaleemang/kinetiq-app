@@ -34,6 +34,7 @@ export interface TemplateDetail extends TemplateListItem {
         setsTarget: number;
         repRangeMin: number;
         repRangeMax: number;
+        rpeTarget: number;
         exercise: {
           id: string;
           name: string;
@@ -77,4 +78,40 @@ export const templatesApi = {
       }`,
     ),
   findOne: (idOrSlug: string) => api.get(`/api/v1/templates/${idOrSlug}`),
+  mine: () => api.get('/api/v1/templates/mine'),
+  fork: (idOrSlug: string) => api.post(`/api/v1/templates/${idOrSlug}/fork`),
+  scratch: (body?: {
+    name?: string;
+    daysPerWeek?: number;
+    days?: Array<{ dayNumber: number; dayType: 'WORKOUT' | 'REST'; label: string }>;
+  }) => api.post('/api/v1/templates/scratch', body ?? {}),
+  update: (
+    id: string,
+    body: {
+      name?: string;
+      description?: string;
+      daysPerWeek?: number;
+      splitType?: string;
+      level?: string;
+      goal?: string;
+    },
+  ) => api.patch(`/api/v1/templates/${id}`, body),
+  remove: (id: string) => api.delete(`/api/v1/templates/${id}`),
+  replaceDays: (
+    id: string,
+    days: Array<{
+      dayNumber: number;
+      dayType: 'WORKOUT' | 'REST';
+      label: string;
+      exercises?: Array<{
+        exerciseId: string;
+        orderIndex: number;
+        setsTarget: number;
+        repRangeMin: number;
+        repRangeMax: number;
+        rpeTarget?: number;
+      }>;
+    }>,
+  ) => api.patch(`/api/v1/templates/${id}/days`, { days }),
+  validate: (id: string) => api.post(`/api/v1/templates/${id}/validate`),
 };

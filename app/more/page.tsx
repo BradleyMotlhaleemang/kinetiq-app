@@ -1,8 +1,11 @@
 'use client';
 
+import { useEffect } from 'react';
 import AppHeader from '@/components/AppHeader';
 import { useRouter } from 'next/navigation';
-import { BarChart2, ClipboardList, BookOpen, User } from 'lucide-react';
+import { BarChart2, ClipboardList, BookOpen, User, ShieldCheck } from 'lucide-react';
+import { useAuthStore } from '@/store/auth.store';
+import api from '@/lib/api/client';
 
 const MORE_ITEMS = [
   { icon: BarChart2, label: 'Analytics', description: 'e1RM trends, volume, PRs', href: '/analytics' },
@@ -11,15 +14,35 @@ const MORE_ITEMS = [
   { icon: User, label: 'Profile', description: 'Account and settings', href: '/profile' },
 ];
 
+const ADMIN_ITEM = {
+  icon: ShieldCheck,
+  label: 'Kinetiq Admin',
+  description: 'Operator portal — exercises and templates',
+  href: '/admin',
+};
+
 export default function MorePage() {
   const router = useRouter();
+  const { role, setRole, isAuthenticated, hydrated } = useAuthStore();
+
+  useEffect(() => {
+    if (!hydrated || !isAuthenticated() || role) return;
+    api
+      .get('/api/v1/users/me')
+      .then((res) => {
+        setRole(res.data?.role === 'ADMIN' ? 'ADMIN' : 'USER');
+      })
+      .catch(() => {});
+  }, [hydrated, isAuthenticated, role, setRole]);
+
+  const items = role === 'ADMIN' ? [...MORE_ITEMS, ADMIN_ITEM] : MORE_ITEMS;
 
   return (
     <div style={{ minHeight: '100dvh', backgroundColor: '#111318', paddingBottom: '96px' }}>
       <AppHeader title="More" />
       <div style={{ maxWidth: '480px', margin: '0 auto', padding: '0 20px' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          {MORE_ITEMS.map((item) => {
+          {items.map((item) => {
             const Icon = item.icon;
             return (
               <button

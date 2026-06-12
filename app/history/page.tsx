@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/auth.store';
 import { workoutsApi } from '@/lib/api/workouts';
+import { ApiError } from '@/lib/api/client';
 import { Dumbbell } from 'lucide-react';
 
 // ── COLOUR TOKENS ────────────────────────────────────────────────
@@ -87,6 +88,8 @@ function StatPill({
   );
 }
 
+type SessionFilter = 'ALL' | 'BLOCK' | 'QUICK';
+
 // ── WORKOUT CARD ─────────────────────────────────────────────────
 function WorkoutCard({ workout, index }: { workout: any; index: number }) {
   const [expanded, setExpanded] = useState(false);
@@ -96,7 +99,21 @@ function WorkoutCard({ workout, index }: { workout: any; index: number }) {
   const timeStr = date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
 
   const accent = DAY_COLORS[index % DAY_COLORS.length];
-  const hasTopSets = workout.sets && workout.sets.length > 0;
+  const sets = workout.sets ?? [];
+  const uniqueExerciseCount = new Set(sets.map((s: { exerciseId?: string }) => s.exerciseId)).size;
+  const isQuick = workout.sessionType === 'STANDALONE';
+  const highlights = sets
+    .filter((s: { isPR?: boolean }) => s.isPR)
+    .slice(0, 3);
+  const topByWeight = [...sets].sort((a: { weight?: number }, b: { weight?: number }) => (b.weight ?? 0) - (a.weight ?? 0));
+  const displayHighlights = highlights.length > 0
+    ? highlights
+    : topByWeight.slice(0, 3);
+  const hasHighlights = displayHighlights.length > 0;
+  const topWeight = topByWeight[0]?.weight ?? 0;
+  const sessionTitle = isQuick
+    ? `${uniqueExerciseCount} exercise${uniqueExerciseCount === 1 ? '' : 's'} · ${topWeight}kg top`
+    : (workout.splitDayLabel ?? 'Training Session');
 
   return (
     <div style={{
@@ -111,13 +128,13 @@ function WorkoutCard({ workout, index }: { workout: any; index: number }) {
       <div
         style={{
           padding: '14px 16px',
-          cursor: hasTopSets ? 'pointer' : 'default',
+          cursor: hasHighlights ? 'pointer' : 'default',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
           gap: 12,
         }}
-        onClick={() => hasTopSets && setExpanded((e) => !e)}
+        onClick={() => hasHighlights && setExpanded((e) => !e)}
       >
         {/* Left — icon + labels */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 0 }}>
@@ -136,19 +153,36 @@ function WorkoutCard({ workout, index }: { workout: any; index: number }) {
           </div>
 
           <div style={{ minWidth: 0 }}>
-            <p style={{
-              fontFamily: 'Space Grotesk, sans-serif',
-              fontWeight: 800,
-              fontSize: 13,
-              color: C.onSurface,
-              margin: 0,
-              letterSpacing: '-0.01em',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}>
-              {workout.splitDayLabel ?? 'Training Session'}
-            </p>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: isQuick ? 4 : 0, flexWrap: 'wrap' }}>
+              {isQuick && (
+                <span style={{
+                  fontSize: 9,
+                  fontWeight: 700,
+                  letterSpacing: '0.1em',
+                  textTransform: 'uppercase',
+                  color: '#002021',
+                  background: C.tertiary,
+                  padding: '2px 6px',
+                  borderRadius: 4,
+                  flexShrink: 0,
+                }}>
+                  Quick
+                </span>
+              )}
+              <p style={{
+                fontFamily: 'Space Grotesk, sans-serif',
+                fontWeight: 800,
+                fontSize: 13,
+                color: C.onSurface,
+                margin: 0,
+                letterSpacing: '-0.01em',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}>
+                {sessionTitle}
+              </p>
+            </div>
             <p style={{
               fontFamily: 'Manrope, sans-serif',
               fontWeight: 500,
@@ -162,7 +196,7 @@ function WorkoutCard({ workout, index }: { workout: any; index: number }) {
         </div>
 
         {/* Right — chevron if expandable */}
-        {hasTopSets && (
+        {hasHighlights && (
           <div style={{
             width: 28,
             height: 28,
@@ -202,13 +236,13 @@ function WorkoutCard({ workout, index }: { workout: any; index: number }) {
         gap: 8,
         padding: '0 16px 14px',
       }}>
-        <StatPill value={workout.totalSets ?? 0}                     label="Sets"      />
+        <StatPill value={workout.totalSets ?? sets.length}           label="Sets"      />
         <StatPill value={Math.round(workout.totalVolume ?? 0)}       label="Vol (kg)"  />
-        <StatPill value={workout.sets?.length ?? 0}                  label="Exercises" />
+        <StatPill value={uniqueExerciseCount}                        label="Exercises" />
       </div>
 
       {/* ── EXPANDED TOP SETS ── */}
-      {expanded && hasTopSets && (
+      {expanded && hasHighlights && (
         <div style={{
           padding: '12px 16px 14px',
           borderTop: `1px solid ${C.outlineVariant}`,
@@ -221,11 +255,11 @@ function WorkoutCard({ workout, index }: { workout: any; index: number }) {
             color: C.outline,
             margin: '0 0 10px',
           }}>
-            Top Sets
+            Session Highlights
           </p>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {workout.sets.slice(0, 3).map((set: any, i: number) => (
+            {displayHighlights.map((set: any, i: number) => (
               <div
                 key={set.id ?? i}
                 style={{
@@ -237,7 +271,6 @@ function WorkoutCard({ workout, index }: { workout: any; index: number }) {
                   padding: '8px 12px',
                 }}
               >
-                {/* Set number pill */}
                 <span style={{
                   fontSize: 10,
                   fontWeight: 700,
@@ -246,10 +279,23 @@ function WorkoutCard({ workout, index }: { workout: any; index: number }) {
                   borderRadius: 5,
                   padding: '2px 7px',
                 }}>
-                  Set {set.setNumber}
+                  {set.isPR ? 'PR' : 'Top'}
                 </span>
 
-                {/* Weight × reps */}
+                <span style={{
+                  fontFamily: 'Manrope, sans-serif',
+                  fontWeight: 600,
+                  fontSize: 11,
+                  color: C.onSurfaceVariant,
+                  flex: 1,
+                  marginLeft: 8,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}>
+                  {set.exercise?.name ?? 'Exercise'}
+                </span>
+
                 <span style={{
                   fontFamily: 'Space Grotesk, sans-serif',
                   fontWeight: 800,
@@ -300,11 +346,18 @@ function hexToRgb(hex: string): string {
 }
 
 // ── PAGE ─────────────────────────────────────────────────────────
+const FILTER_OPTIONS: { id: SessionFilter; label: string }[] = [
+  { id: 'ALL', label: 'All' },
+  { id: 'BLOCK', label: 'Block' },
+  { id: 'QUICK', label: 'Quick' },
+];
+
 export default function HistoryPage() {
   const router = useRouter();
   const { isAuthenticated } = useAuthStore();
   const [workouts, setWorkouts] = useState<any[]>([]);
   const [loading, setLoading]   = useState(true);
+  const [sessionFilter, setSessionFilter] = useState<SessionFilter>('ALL');
 
   useEffect(() => {
     if (!isAuthenticated()) { router.push('/auth/login'); return; }
@@ -431,10 +484,40 @@ export default function HistoryPage() {
           fontSize: 13,
           fontWeight: 500,
           color: C.outline,
-          margin: '0 0 22px',
+          margin: '0 0 16px',
         }}>
           {workouts.length} completed session{workouts.length !== 1 ? 's' : ''}
         </p>
+
+        {workouts.length > 0 && (
+          <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
+            {FILTER_OPTIONS.map((option) => {
+              const active = sessionFilter === option.id;
+              return (
+                <button
+                  key={option.id}
+                  type="button"
+                  onClick={() => setSessionFilter(option.id)}
+                  style={{
+                    padding: '6px 12px',
+                    borderRadius: 9999,
+                    border: `1px solid ${active ? C.primary : C.outlineVariant}`,
+                    background: active ? 'rgba(177,197,255,0.1)' : C.surfaceHigh,
+                    color: active ? C.primary : C.onSurfaceVariant,
+                    fontFamily: 'Manrope, sans-serif',
+                    fontSize: 11,
+                    fontWeight: 700,
+                    letterSpacing: '0.06em',
+                    textTransform: 'uppercase',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
 
         {/* ── EMPTY STATE ── */}
         {workouts.length === 0 ? (
@@ -494,15 +577,35 @@ export default function HistoryPage() {
               Start Training →
             </button>
           </div>
-        ) : (
+        ) : (() => {
+          const filtered = workouts.filter((workout) => {
+            if (sessionFilter === 'ALL') return true;
+            if (sessionFilter === 'QUICK') return workout.sessionType === 'STANDALONE';
+            return workout.sessionType !== 'STANDALONE';
+          });
 
-          // ── WORKOUT LIST ──
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {workouts.map((workout, index) => (
-              <WorkoutCard key={workout.id} workout={workout} index={index} />
-            ))}
-          </div>
-        )}
+          if (filtered.length === 0) {
+            return (
+              <p style={{
+                fontFamily: 'Manrope, sans-serif',
+                fontSize: 13,
+                color: C.outline,
+                margin: 0,
+                padding: '24px 0',
+              }}>
+                No {sessionFilter === 'QUICK' ? 'quick' : 'block'} sessions yet.
+              </p>
+            );
+          }
+
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {filtered.map((workout, index) => (
+                <WorkoutCard key={workout.id} workout={workout} index={index} />
+              ))}
+            </div>
+          );
+        })()}
       </div>
     </div>
   );

@@ -1,4 +1,5 @@
 import { DEV_BYPASS_TOKEN } from '@/lib/auth/devBypass';
+import { reportApiError } from '@/lib/sentry/report-api-error';
 
 /** API origin only - request paths must include `/api/v1/...` (Nest `setGlobalPrefix('api/v1')`). */
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
@@ -29,25 +30,52 @@ function getToken() {
   return null;
 }
 
-function parseErrorPayload(data: unknown): { message: string; code?: string } {
+const RATE_LIMIT_MESSAGE = 'Too many requests. Please wait a moment and try again.';
+
+const ERROR_CODE_MESSAGES: Record<string, string> = {
+  CUSTOM_TEMPLATE_LIMIT_REACHED:
+    'You have reached the maximum number of custom programs. Delete one to create another.',
+  CUSTOM_TEMPLATE_RATE_LIMIT:
+    'You are creating programs too quickly. Please wait a few minutes and try again.',
+  DUPLICATE_NAME_COLLISION:
+    'A template with that name already exists. Try again or rename the copy.',
+  EMAIL_RATE_LIMIT:
+    'Please wait before requesting another email. Check your inbox or try again shortly.',
+};
+
+function parseErrorPayload(
+  data: unknown,
+  status: number,
+): { message: string; code?: string } {
   const payload = data as {
     message?: string | { code?: string; message?: string };
     code?: string;
   } | null;
 
-  if (!payload) return { message: 'Request failed' };
-
-  if (typeof payload.message === 'object' && payload.message !== null) {
+  if (!payload) {
     return {
-      message: payload.message.message || 'Request failed',
-      code: payload.message.code,
+      message: status === 429 ? RATE_LIMIT_MESSAGE : 'Request failed',
     };
   }
 
-  return {
-    message: typeof payload.message === 'string' ? payload.message : 'Request failed',
-    code: payload.code,
-  };
+  let message: string;
+  let code: string | undefined;
+
+  if (typeof payload.message === 'object' && payload.message !== null) {
+    message = payload.message.message || 'Request failed';
+    code = payload.message.code ?? payload.code;
+  } else {
+    message = typeof payload.message === 'string' ? payload.message : 'Request failed';
+    code = payload.code;
+  }
+
+  if (status === 429) {
+    message = code && ERROR_CODE_MESSAGES[code] ? ERROR_CODE_MESSAGES[code] : RATE_LIMIT_MESSAGE;
+  } else if (code && ERROR_CODE_MESSAGES[code]) {
+    message = ERROR_CODE_MESSAGES[code];
+  }
+
+  return { message, code };
 }
 
 let refreshPromise: Promise<string | null> | null = null;
@@ -103,11 +131,13 @@ async function request(
   try {
     res = await fetch(`${BASE_URL}${path}`, fetchOptions);
   } catch {
-    throw new ApiError(
+    const networkError = new ApiError(
       `Cannot reach API at ${BASE_URL}. Is kinetiq-api running on port 3000?`,
       0,
       null,
     );
+    reportApiError(networkError, path);
+    throw networkError;
   }
 
   if (res.status === 401 && useAuth && token && token !== DEV_BYPASS_TOKEN) {
@@ -132,8 +162,10 @@ async function request(
   const data = await res.json().catch(() => ({}));
 
   if (!res.ok) {
-    const { message, code } = parseErrorPayload(data);
-    throw new ApiError(message, res.status, data, code);
+    const { message, code } = parseErrorPayload(data, res.status);
+    const apiError = new ApiError(message, res.status, data, code);
+    reportApiError(apiError, path);
+    throw apiError;
   }
 
   return { data };

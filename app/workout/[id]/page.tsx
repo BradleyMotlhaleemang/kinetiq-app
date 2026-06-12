@@ -4,18 +4,26 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import {
   workoutsApi,
+  WEIGHT_JUMP_THRESHOLD,
   type Prescription,
   type PrescriptionSubstitution,
 } from '@/lib/api/workouts';
 import { exercisesApi } from '@/lib/api/exercises';
 import api, { ApiError } from '@/lib/api/client';
 import { useSessionStore } from '@/store/session.store';
+import { getRepRangeViolation } from '@/lib/programs/programGoal';
+import RepRangeExceededModal from '@/components/RepRangeExceededModal';
+import SameDayWorkoutModal from '@/components/SameDayWorkoutModal';
+import WeightJumpWarningModal from '@/components/WeightJumpWarningModal';
+import IncompleteWorkoutModal from '@/components/IncompleteWorkoutModal';
+import BiofeedbackSheet from '@/components/biofeedback/BiofeedbackSheet';
 import { Check, GripVertical, Plus, Search, Trash2, X, RotateCcw } from 'lucide-react';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 type ExerciseItem = {
   id: string;
+  workoutExerciseId?: string;
   name: string;
   equipment?: string | null;
   primaryMuscle?: string | null;
@@ -88,6 +96,54 @@ const confidenceLabel = (level: string | null | undefined): string =>
 
 const formatRepRange = (low: number, high: number): string =>
   low === high ? `${low}` : `${low}–${high}`;
+
+const PRESCRIPTION_ONBOARDING_KEY = 'kinetiq_prescription_onboarding_seen';
+
+function resolveTargetSetCount(
+  exerciseId: string,
+  setsTarget?: number,
+  prescriptions?: Record<string, Prescription>,
+): number {
+  const rx = prescriptions?.[exerciseId]?.setTarget;
+  const template = setsTarget ?? 3;
+  if (typeof rx === 'number' && rx > 0) {
+    return Math.max(rx, template, 1);
+  }
+  return Math.max(template, 1);
+}
+
+function shouldPrefillPrescription(prescription: Prescription | undefined): boolean {
+  if (!prescription?.prescriptionActive) return false;
+  const phase = prescription.enginePhase;
+  if (phase !== 'LEARNING' && phase !== 'ACTIVE') return false;
+  const conf = (prescription.confidenceLevel ?? '').toUpperCase();
+  if (
+    conf === 'INSUFFICIENT_DATA' ||
+    conf === 'VERY_LOW' ||
+    conf === 'LOW' ||
+    conf === 'VERY_LOW_CONFIDENCE' ||
+    conf === 'LOW_CONFIDENCE'
+  ) {
+    return false;
+  }
+  return prescription.weightTarget > 0;
+}
+
+function prefillValues(prescription: Prescription | undefined): {
+  weight: string;
+  reps: string;
+} {
+  if (!shouldPrefillPrescription(prescription)) {
+    return { weight: '', reps: '' };
+  }
+  const repsMid = Math.round(
+    (prescription!.repRangeLow + prescription!.repRangeHigh) / 2,
+  );
+  return {
+    weight: String(prescription!.weightTarget),
+    reps: String(repsMid),
+  };
+}
 
 // muscle → accent color map (Kinetiq palette only — no random purples/oranges)
 const muscleColor = (muscle: string | null | undefined): string => {
@@ -639,7 +695,9 @@ function PrescriptionCard({
             color: ON_SURFACE,
           }}
         >
-          Building your baseline
+          {prescription.prescriptionActive === false
+            ? 'Building your profile'
+            : 'Building your baseline'}
         </p>
         <p
           style={{
@@ -915,6 +973,7 @@ export default function WorkoutPage() {
   } = useSessionStore();
 
   const [workout, setWorkout] = useState<any>(null);
+  const [sessionType, setSessionType] = useState<string>('MESOCYCLE');
   const [exercises, setExercises] = useState<ExerciseItem[]>([]);
   const [sessionDays, setSessionDays] = useState<Array<{ label: string; exercises: ExerciseItem[] }>>([
     { label: 'Day 1', exercises: [] },
@@ -936,6 +995,35 @@ export default function WorkoutPage() {
   const [dismissedSubstitutionByExercise, setDismissedSubstitutionByExercise] =
     useState<Record<string, boolean>>({});
   const [substitutionSubmitting, setSubstitutionSubmitting] = useState(false);
+  const [substitutionScope, setSubstitutionScope] = useState<'SESSION' | 'REMAINING_BLOCK'>('SESSION');
+  const [repWarning, setRepWarning] = useState<{
+    exerciseId: string;
+    rowIndex: number;
+    variant: 'low' | 'high';
+  } | null>(null);
+  const repWarningSuppressed = useRef(false);
+  const weightWarningSuppressed = useRef(false);
+  const historicalBestByExercise = useRef<Record<string, number>>({});
+  const [weightWarning, setWeightWarning] = useState<{
+    exerciseId: string;
+    rowIndex: number;
+    enteredWeight: number;
+    historicalBest: number;
+    message?: string;
+    tier?: string;
+  } | null>(null);
+  const weightWarningSuppressedByExercise = useRef<Record<string, boolean>>({});
+  const [showSameDayModal, setShowSameDayModal] = useState(false);
+  const [showBiofeedbackSheet, setShowBiofeedbackSheet] = useState(false);
+  const [showIncompleteModal, setShowIncompleteModal] = useState(false);
+  const [showExitModal, setShowExitModal] = useState(false);
+  const [incompleteItems, setIncompleteItems] = useState<
+    Array<{ exerciseName: string; completedSets: number; targetSets: number }>
+  >([]);
+  const [exitModalMode, setExitModalMode] = useState<'complete' | 'exit'>('complete');
+  const [showPrescriptionOnboarding, setShowPrescriptionOnboarding] = useState(false);
+  const incompleteWarningSuppressed = useRef(false);
+  const prescriptionOnboardingChecked = useRef(false);
 
   // Live timer
   const [elapsedSec, setElapsedSec] = useState(0);
@@ -984,6 +1072,9 @@ export default function WorkoutPage() {
       const res = await workoutsApi.findOne(workoutId);
       const data = res.data;
       setWorkout(data);
+      if (typeof data?.sessionType === 'string') {
+        setSessionType(data.sessionType);
+      }
       const fallbackLabel = data?.splitDayLabel ?? 'Day 1';
       setSessionDays((prev) => [{
         ...prev[0],
@@ -1026,12 +1117,14 @@ export default function WorkoutPage() {
   async function loadExercises() {
     try {
       setExerciseLoadError(false);
-      const res = await api.get(`/api/v1/workouts/${workoutId}/exercises`);
+      const res = await workoutsApi.getExercises(workoutId);
       const payload = res.data as WorkoutExercisesResponse;
+      if (payload.sessionType) setSessionType(payload.sessionType);
       const workoutExercises = [...(payload.exercises ?? [])]
         .sort((a, b) => a.orderIndex - b.orderIndex)
         .map((exercise) => ({
           id: exercise.exerciseId,
+          workoutExerciseId: exercise.id,
           name: exercise.name,
           primaryMuscle: exercise.primaryMuscle,
           movementClass: exercise.movementClass,
@@ -1042,6 +1135,9 @@ export default function WorkoutPage() {
       setSessionDays((current) => {
         return [{ ...current[0], exercises: workoutExercises }];
       });
+      for (const exercise of workoutExercises) {
+        ensureRows(exercise.id, exercise.setsTarget);
+      }
       if (workoutExercises.length === 0) {
         setShowExercisePicker(true);
       }
@@ -1070,12 +1166,20 @@ export default function WorkoutPage() {
     void loadExerciseCatalogForPicker();
   }, [showExercisePicker, exercises.length]);
 
-  async function completeSession() {
+  function localDayBounds() {
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    const end = new Date();
+    end.setHours(23, 59, 59, 999);
+    return { completedAfter: start.toISOString(), completedBefore: end.toISOString() };
+  }
+
+  async function finalizeCompleteSession() {
     setCompleting(true);
     try {
       await workoutsApi.complete(workoutId);
       clearSession();
-      router.push(`/biofeedback?workoutId=${workoutId}`);
+      setShowBiofeedbackSheet(true);
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         return;
@@ -1083,27 +1187,97 @@ export default function WorkoutPage() {
       console.error(err);
     } finally {
       setCompleting(false);
+      setShowSameDayModal(false);
     }
+  }
+
+  function getIncompleteWorkoutItems() {
+    const exercises = sessionDays[activeDayIndex]?.exercises ?? [];
+    const items: Array<{ exerciseName: string; completedSets: number; targetSets: number }> = [];
+
+    for (const exercise of exercises) {
+      const targetSets =
+        prescriptions[exercise.id]?.setTarget ??
+        exercise.setsTarget ??
+        3;
+      const completedSets = (setRows[exercise.id] ?? []).filter((r) => r.completed).length;
+      if (completedSets < targetSets) {
+        items.push({
+          exerciseName: exercise.name,
+          completedSets,
+          targetSets,
+        });
+      }
+    }
+
+    return items;
+  }
+
+  async function proceedToComplete() {
+    try {
+      const bounds = localDayBounds();
+      const advisoryRes = await workoutsApi.getCompletionAdvisory(
+        workoutId,
+        bounds.completedAfter,
+        bounds.completedBefore,
+      );
+      if (advisoryRes.data?.completedToday) {
+        setShowSameDayModal(true);
+        return;
+      }
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) return;
+    }
+    await finalizeCompleteSession();
+  }
+
+  function openIncompleteModal(mode: 'complete' | 'exit') {
+    const incomplete = getIncompleteWorkoutItems();
+    if (incomplete.length > 0 && !incompleteWarningSuppressed.current) {
+      setIncompleteItems(incomplete);
+      setExitModalMode(mode);
+      if (mode === 'exit') {
+        setShowExitModal(true);
+      } else {
+        setShowIncompleteModal(true);
+      }
+      return true;
+    }
+    return false;
+  }
+
+  async function completeSession() {
+    if (openIncompleteModal('complete')) return;
+    await proceedToComplete();
+  }
+
+  function handleExitWorkout() {
+    if (openIncompleteModal('exit')) return;
+    router.push('/dashboard');
   }
 
   // ── Helpers ──
 
   function defaultEmptyRows(exerciseId: string, setsTarget?: number): SetRow[] {
-    const targetSets =
-      useSessionStore.getState().prescriptions[exerciseId]?.setTarget ??
-      setsTarget ??
-      3;
+    const storePrescriptions = useSessionStore.getState().prescriptions;
+    const targetSets = resolveTargetSetCount(
+      exerciseId,
+      setsTarget,
+      storePrescriptions,
+    );
+    const fill = prefillValues(storePrescriptions[exerciseId]);
     return Array.from({ length: targetSets }, (_, i) => ({
       id: `${exerciseId}-${i + 1}`,
-      weight: '',
-      reps: '',
+      weight: fill.weight,
+      reps: fill.reps,
       completed: false,
     }));
   }
 
   function ensureRows(exerciseId: string, setsTarget?: number) {
     setSetRows((prev) => {
-      if (prev[exerciseId]?.length) return prev;
+      const existing = prev[exerciseId];
+      if (existing && existing.length > 0) return prev;
       return {
         ...prev,
         [exerciseId]: defaultEmptyRows(exerciseId, setsTarget),
@@ -1124,7 +1298,7 @@ export default function WorkoutPage() {
     });
   }
 
-  async function handleSetComplete(exerciseId: string, rowIndex: number) {
+  async function submitSetComplete(exerciseId: string, rowIndex: number) {
     const rows = setRows[exerciseId] ?? [];
     const row = rows[rowIndex];
     if (!row || !row.weight || !row.reps || row.completed) return;
@@ -1146,12 +1320,100 @@ export default function WorkoutPage() {
           index === rowIndex ? { ...current, completed: true } : current
         ),
       }));
+      setRepWarning(null);
+      setWeightWarning(null);
+      const loggedWeight = parseFloat(row.weight);
+      if (!Number.isNaN(loggedWeight)) {
+        historicalBestByExercise.current[exerciseId] = Math.max(
+          historicalBestByExercise.current[exerciseId] ?? 0,
+          loggedWeight,
+        );
+      }
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         return;
       }
       console.error(err);
     }
+  }
+
+  function getExerciseHistoricalBest(exerciseId: string): number | null {
+    const fromHistory = historicalBestByExercise.current[exerciseId];
+    const fromPrescription = prescriptions[exerciseId]?.historicalBestWeight;
+    const fromSession = (setRows[exerciseId] ?? [])
+      .filter((r) => r.completed && r.weight)
+      .map((r) => parseFloat(r.weight))
+      .filter((w) => !Number.isNaN(w));
+    const candidates = [
+      ...(typeof fromHistory === 'number' ? [fromHistory] : []),
+      ...(typeof fromPrescription === 'number' ? [fromPrescription] : []),
+      ...fromSession,
+    ];
+    if (candidates.length === 0) return null;
+    return Math.max(...candidates);
+  }
+
+  async function handleSetComplete(exerciseId: string, rowIndex: number) {
+    const rows = setRows[exerciseId] ?? [];
+    const row = rows[rowIndex];
+    if (!row || !row.weight || !row.reps || row.completed) return;
+
+    const reps = parseInt(row.reps, 10);
+    if (Number.isNaN(reps)) return;
+
+    const repViolation = getRepRangeViolation(workout?.programGoal, reps);
+    if (repViolation && !repWarningSuppressed.current) {
+      setRepWarning({ exerciseId, rowIndex, variant: repViolation });
+      return;
+    }
+
+    const weight = parseFloat(row.weight);
+    if (
+      !Number.isNaN(weight) &&
+      !weightWarningSuppressed.current &&
+      !weightWarningSuppressedByExercise.current[exerciseId]
+    ) {
+      try {
+        const advisoryRes = await workoutsApi.getLoadAdvisory(
+          workoutId,
+          exerciseId,
+          weight,
+          reps,
+        );
+        const advisory = advisoryRes.data;
+        if (advisory?.shouldWarn) {
+          setWeightWarning({
+            exerciseId,
+            rowIndex,
+            enteredWeight: weight,
+            historicalBest: advisory.baselineWeight ?? weight,
+            message: advisory.message,
+            tier: advisory.tier,
+          });
+          return;
+        }
+      } catch {
+        const historicalBest = getExerciseHistoricalBest(exerciseId);
+        if (
+          historicalBest !== null &&
+          historicalBest > 0 &&
+          weight > historicalBest * (1 + WEIGHT_JUMP_THRESHOLD)
+        ) {
+          setWeightWarning({
+            exerciseId,
+            rowIndex,
+            enteredWeight: weight,
+            historicalBest,
+            message:
+              'This is much higher than your recent working weights for this exercise. Mistyped?',
+            tier: 'PROGRESSION',
+          });
+          return;
+        }
+      }
+    }
+
+    await submitSetComplete(exerciseId, rowIndex);
   }
 
   function handleWeightChange(exerciseId: string, rowIndex: number, val: string) {
@@ -1172,7 +1434,27 @@ export default function WorkoutPage() {
     }));
   }
 
-  function deleteExercise(exerciseId: string) {
+  async function deleteExercise(exerciseId: string) {
+    const target = dayExercises.find((item) => item.id === exerciseId);
+    const hasLoggedSets = (setRows[exerciseId] ?? []).some((row) => row.completed);
+
+    if (sessionType === 'STANDALONE') {
+      if (hasLoggedSets) {
+        alert('Cannot remove an exercise with logged sets.');
+        return;
+      }
+      if (target?.workoutExerciseId) {
+        try {
+          await workoutsApi.removeExercise(workoutId, target.workoutExerciseId);
+        } catch (err) {
+          if (err instanceof ApiError && err.status === 401) return;
+          console.error(err);
+          alert('Failed to remove exercise');
+          return;
+        }
+      }
+    }
+
     setSessionDays((prev) =>
       prev.map((day, index) =>
         index === activeDayIndex
@@ -1180,15 +1462,66 @@ export default function WorkoutPage() {
           : day
       )
     );
+    setSetRows((prev) => {
+      const next = { ...prev };
+      delete next[exerciseId];
+      return next;
+    });
+    if (activeExerciseId === exerciseId) {
+      const remaining = dayExercises.filter((item) => item.id !== exerciseId);
+      setActiveExerciseId(remaining[0]?.id ?? null);
+    }
   }
 
-  function addExercise(exercise: ExerciseItem) {
+  async function addExercise(exercise: ExerciseItem) {
+    if (sessionType === 'STANDALONE') {
+      try {
+        const res = await workoutsApi.addExercise(workoutId, exercise.id);
+        const row = res.data as {
+          id: string;
+          exerciseId: string;
+          name: string;
+          primaryMuscle: string | null;
+          movementClass: string | null;
+          setsTarget: number;
+          repRangeMin: number;
+          repRangeMax: number;
+        };
+        const persisted: ExerciseItem = {
+          id: row.exerciseId,
+          workoutExerciseId: row.id,
+          name: row.name,
+          primaryMuscle: row.primaryMuscle,
+          movementClass: row.movementClass,
+          setsTarget: row.setsTarget,
+          repRangeMin: row.repRangeMin,
+          repRangeMax: row.repRangeMax,
+        };
+        setSessionDays((prev) =>
+          prev.map((day, index) =>
+            index === activeDayIndex
+              ? { ...day, exercises: [...day.exercises, persisted] }
+              : day
+          )
+        );
+        ensureRows(persisted.id, persisted.setsTarget);
+        setActiveExerciseId(persisted.id);
+        return;
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 401) return;
+        console.error(err);
+        alert('Failed to add exercise');
+        return;
+      }
+    }
+
     setSessionDays((prev) =>
       prev.map((day, index) =>
         index === activeDayIndex ? { ...day, exercises: [...day.exercises, exercise] } : day
       )
     );
-    ensureRows(exercise.id);
+    ensureRows(exercise.id, exercise.setsTarget);
+    setActiveExerciseId(exercise.id);
   }
 
   // Timer display
@@ -1208,6 +1541,7 @@ export default function WorkoutPage() {
   const dayLabel = currentDay?.label ?? workout?.splitDayLabel ?? 'Day 1';
   const dayNumber = activeDayIndex + 1;
   const dayExercises = currentDay?.exercises ?? EMPTY_EXERCISES;
+  const isStandalone = sessionType === 'STANDALONE';
   const activeExercise =
     dayExercises.find((exercise) => exercise.id === activeExerciseId) ??
     dayExercises[0] ??
@@ -1282,6 +1616,11 @@ export default function WorkoutPage() {
           coachingNote: data.coachingNote ?? null,
           progressionStep: data.progressionStep ?? null,
           volumeProgressionReason: data.volumeProgressionReason,
+          historicalBestWeight:
+            typeof data.historicalBestWeight === 'number'
+              ? data.historicalBestWeight
+              : null,
+          prescriptionActive: Boolean(data.prescriptionActive),
           substitution:
             substitutionRaw && typeof substitutionRaw === 'object'
               ? {
@@ -1298,6 +1637,12 @@ export default function WorkoutPage() {
         };
 
         setPrescription(exerciseId, prescription);
+        if (typeof prescription.historicalBestWeight === 'number') {
+          historicalBestByExercise.current[exerciseId] = Math.max(
+            historicalBestByExercise.current[exerciseId] ?? 0,
+            prescription.historicalBestWeight,
+          );
+        }
       } catch {
         setPrescriptionErrorByExercise((current) => ({
           ...current,
@@ -1344,6 +1689,48 @@ export default function WorkoutPage() {
     });
   }, [dayExercises, fetchPrescriptionForExercise]);
 
+  useEffect(() => {
+    if (prescriptionOnboardingChecked.current) return;
+    const hasActiveRx = Object.values(prescriptions).some((p) =>
+      shouldPrefillPrescription(p),
+    );
+    if (!hasActiveRx) return;
+    prescriptionOnboardingChecked.current = true;
+    try {
+      if (localStorage.getItem(PRESCRIPTION_ONBOARDING_KEY) !== '1') {
+        setShowPrescriptionOnboarding(true);
+      }
+    } catch {
+      setShowPrescriptionOnboarding(true);
+    }
+  }, [prescriptions]);
+
+  useEffect(() => {
+    setSetRows((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const exercise of dayExercises) {
+        const rx = prescriptions[exercise.id];
+        if (!shouldPrefillPrescription(rx)) continue;
+        const fill = prefillValues(rx);
+        const rows = next[exercise.id];
+        if (!rows || rows.length === 0) {
+          next[exercise.id] = defaultEmptyRows(exercise.id, exercise.setsTarget);
+          changed = true;
+          continue;
+        }
+        const updated = rows.map((row) => {
+          if (row.completed) return row;
+          if (row.weight || row.reps) return row;
+          changed = true;
+          return { ...row, weight: fill.weight, reps: fill.reps };
+        });
+        next[exercise.id] = updated;
+      }
+      return changed ? next : prev;
+    });
+  }, [prescriptions, dayExercises]);
+
   async function handleConfirmSwap() {
     if (
       !activeExercise ||
@@ -1365,6 +1752,7 @@ export default function WorkoutPage() {
         exerciseId: originalExerciseId,
         substituteExerciseId,
         jointAffected: activeSubstitution.affectedJoint ?? 'UNKNOWN',
+        scope: substitutionScope,
       });
 
       setDismissedSubstitutionByExercise((current) => ({
@@ -1465,7 +1853,7 @@ export default function WorkoutPage() {
         >
           <button
             type="button"
-            onClick={() => router.push('/dashboard')}
+            onClick={handleExitWorkout}
             style={{
               width: '38px',
               height: '38px',
@@ -1482,36 +1870,103 @@ export default function WorkoutPage() {
           </button>
 
           <div style={{ textAlign: 'center' }}>
-            <p
-              style={{
-                margin: 0,
-                fontSize: '0.6rem',
-                fontWeight: 700,
-                color: PRIMARY,
-                letterSpacing: '0.22em',
-                textTransform: 'uppercase',
-              }}
-            >
-              Week {currentWeek} • Day {dayNumber}
-            </p>
-            <h1
-              style={{
-                margin: '2px 0 0',
-                fontFamily: "'Space Grotesk', sans-serif",
-                fontSize: '1.5rem',
-                fontWeight: 900,
-                color: ON_SURFACE,
-                letterSpacing: '-0.02em',
-                textTransform: 'uppercase',
-                fontStyle: 'italic',
-              }}
-            >
-              {dayLabel}
-            </h1>
+            {isStandalone ? (
+              <>
+                <p
+                  style={{
+                    margin: 0,
+                    fontSize: '0.6rem',
+                    fontWeight: 700,
+                    color: TERTIARY,
+                    letterSpacing: '0.22em',
+                    textTransform: 'uppercase',
+                  }}
+                >
+                  Quick Workout
+                </p>
+                <h1
+                  style={{
+                    margin: '2px 0 0',
+                    fontFamily: "'Space Grotesk', sans-serif",
+                    fontSize: '1.25rem',
+                    fontWeight: 900,
+                    color: ON_SURFACE,
+                    letterSpacing: '-0.02em',
+                    textTransform: 'uppercase',
+                  }}
+                >
+                  Session
+                </h1>
+              </>
+            ) : (
+              <>
+                <p
+                  style={{
+                    margin: 0,
+                    fontSize: '0.6rem',
+                    fontWeight: 700,
+                    color: PRIMARY,
+                    letterSpacing: '0.22em',
+                    textTransform: 'uppercase',
+                  }}
+                >
+                  Week {currentWeek} • Day {dayNumber}
+                </p>
+                <h1
+                  style={{
+                    margin: '2px 0 0',
+                    fontFamily: "'Space Grotesk', sans-serif",
+                    fontSize: '1.5rem',
+                    fontWeight: 900,
+                    color: ON_SURFACE,
+                    letterSpacing: '-0.02em',
+                    textTransform: 'uppercase',
+                    fontStyle: 'italic',
+                  }}
+                >
+                  {dayLabel}
+                </h1>
+              </>
+            )}
           </div>
 
           <div style={{ width: '38px', height: '38px' }} />
         </header>
+
+        {isStandalone && (
+          <div
+            style={{
+              marginBottom: 20,
+              background: '#161820',
+              border: '1px solid #3a3c44',
+              borderRadius: 12,
+              padding: '10px 14px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              flexWrap: 'wrap',
+            }}
+          >
+            <span
+              style={{
+                fontFamily: 'Manrope, sans-serif',
+                fontSize: 10,
+                fontWeight: 700,
+                letterSpacing: '0.12em',
+                textTransform: 'uppercase',
+                color: '#002021',
+                background: TERTIARY,
+                padding: '4px 8px',
+                borderRadius: 4,
+              }}
+            >
+              Quick workout
+            </span>
+            <span style={{ fontSize: '0.75rem', color: OUTLINE }}>
+              Not part of a training block
+            </span>
+          </div>
+        )}
 
         {/* ── Day tabs ── */}
         {sessionDays.length > 1 && (
@@ -1542,8 +1997,27 @@ export default function WorkoutPage() {
           </div>
         )}
 
+        {isStandalone && dayExercises.length === 0 && !showExercisePicker && (
+          <div style={{ textAlign: 'center', padding: '32px 16px', marginBottom: 16 }}>
+            <h2
+              style={{
+                margin: '0 0 8px',
+                fontFamily: "'Space Grotesk', sans-serif",
+                fontWeight: 800,
+                fontSize: '1.1rem',
+                color: ON_SURFACE,
+              }}
+            >
+              Add your first exercise
+            </h2>
+            <p style={{ margin: 0, fontSize: '0.8rem', color: OUTLINE }}>
+              Pick from the catalog below to start logging sets.
+            </p>
+          </div>
+        )}
+
         {/* ── Exercise cards ── */}
-        {activeExercise && (
+        {activeExercise && !isStandalone && (
           <div style={{ marginBottom: '14px', display: 'grid', gap: '10px' }}>
             {shouldShowSubstitutionCard && (
               <div
@@ -1609,7 +2083,30 @@ export default function WorkoutPage() {
                     </ul>
                   </div>
                 )}
-                <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+                <div style={{ display: 'flex', gap: '6px', marginTop: '12px' }}>
+                  {(['SESSION', 'REMAINING_BLOCK'] as const).map((scope) => (
+                    <button
+                      key={scope}
+                      type="button"
+                      onClick={() => setSubstitutionScope(scope)}
+                      style={{
+                        flex: 1,
+                        padding: '8px 0',
+                        borderRadius: '10px',
+                        border: `1px solid ${substitutionScope === scope ? PRIMARY : SURFACE_HIGH}`,
+                        background: substitutionScope === scope ? 'rgba(177,197,255,0.12)' : 'transparent',
+                        color: substitutionScope === scope ? PRIMARY : OUTLINE,
+                        fontFamily: 'Manrope, sans-serif',
+                        fontWeight: 700,
+                        fontSize: '0.62rem',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {scope === 'SESSION' ? 'Just today' : 'Rest of block'}
+                    </button>
+                  ))}
+                </div>
+                <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
                   <button
                     type="button"
                     onClick={handleConfirmSwap}
@@ -1673,12 +2170,18 @@ export default function WorkoutPage() {
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
           {dayExercises.map((exercise) => {
-            const rows = setRows[exercise.id] ?? (() => {
-              const defaultRows = defaultEmptyRows(exercise.id, exercise.setsTarget);
-              // ensure rows are initialized
-              setTimeout(() => ensureRows(exercise.id, exercise.setsTarget), 0);
-              return defaultRows;
-            })();
+            const existingRows = setRows[exercise.id];
+            const rows =
+              existingRows && existingRows.length > 0
+                ? existingRows
+                : (() => {
+                    const defaultRows = defaultEmptyRows(
+                      exercise.id,
+                      exercise.setsTarget,
+                    );
+                    setTimeout(() => ensureRows(exercise.id, exercise.setsTarget), 0);
+                    return defaultRows;
+                  })();
             const accent = muscleColor(exercise.primaryMuscle);
 
             return (
@@ -1845,9 +2348,10 @@ export default function WorkoutPage() {
                       key={exercise.id}
                       type="button"
                       onClick={() => {
-                        addExercise(exercise);
-                        setShowExercisePicker(false);
-                        setExerciseQuery('');
+                        void addExercise(exercise).then(() => {
+                          setShowExercisePicker(false);
+                          setExerciseQuery('');
+                        });
                       }}
                       style={{
                         backgroundColor: SURFACE,
@@ -1968,6 +2472,135 @@ export default function WorkoutPage() {
           justifyContent: 'center',
         }}
       >
+        {repWarning && (
+          <RepRangeExceededModal
+            variant={repWarning.variant}
+            onReenter={() => setRepWarning(null)}
+            onContinue={() => {
+              const pending = repWarning;
+              if (!pending) return;
+              repWarningSuppressed.current = true;
+              setRepWarning(null);
+              void submitSetComplete(pending.exerciseId, pending.rowIndex);
+            }}
+          />
+        )}
+
+        {weightWarning && (
+          <WeightJumpWarningModal
+            exerciseName={
+              (sessionDays[activeDayIndex]?.exercises ?? []).find(
+                (e) => e.id === weightWarning.exerciseId,
+              )?.name ?? 'this exercise'
+            }
+            enteredWeight={weightWarning.enteredWeight}
+            historicalBest={weightWarning.historicalBest}
+            message={weightWarning.message}
+            onReenter={() => setWeightWarning(null)}
+            onContinue={() => {
+              const pending = weightWarning;
+              if (!pending) return;
+              weightWarningSuppressed.current = true;
+              setWeightWarning(null);
+              void submitSetComplete(pending.exerciseId, pending.rowIndex);
+            }}
+            onSuppressToday={() => {
+              const pending = weightWarning;
+              if (!pending) return;
+              weightWarningSuppressedByExercise.current[pending.exerciseId] = true;
+              setWeightWarning(null);
+              void submitSetComplete(pending.exerciseId, pending.rowIndex);
+            }}
+          />
+        )}
+
+        {showPrescriptionOnboarding && (
+          <div
+            style={{
+              width: '100%',
+              maxWidth: 520,
+              marginBottom: 12,
+              padding: '12px 14px',
+              borderRadius: 12,
+              border: `1px solid ${PRIMARY}44`,
+              background: 'rgba(177,197,255,0.08)',
+            }}
+          >
+            <p style={{ margin: '0 0 8px', fontSize: 13, lineHeight: 1.5, color: ON_SURFACE }}>
+              Pre-filled weights and reps are recommendations from your training history and
+              recovery feedback. You always have the final say — log what you actually performed
+              so Kinetiq can improve future suggestions.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                try {
+                  localStorage.setItem(PRESCRIPTION_ONBOARDING_KEY, '1');
+                } catch {
+                  /* ignore */
+                }
+                setShowPrescriptionOnboarding(false);
+              }}
+              style={{
+                padding: '8px 12px',
+                borderRadius: 8,
+                border: 'none',
+                background: PRIMARY,
+                color: SURFACE,
+                fontWeight: 700,
+                fontSize: 12,
+                cursor: 'pointer',
+              }}
+            >
+              Got it
+            </button>
+          </div>
+        )}
+
+        {showIncompleteModal && (
+          <IncompleteWorkoutModal
+            items={incompleteItems}
+            onResume={() => setShowIncompleteModal(false)}
+            onEndAnyway={() => {
+              incompleteWarningSuppressed.current = true;
+              setShowIncompleteModal(false);
+              void proceedToComplete();
+            }}
+          />
+        )}
+
+        {showExitModal && (
+          <IncompleteWorkoutModal
+            items={incompleteItems}
+            onResume={() => setShowExitModal(false)}
+            onEndAnyway={() => {
+              incompleteWarningSuppressed.current = true;
+              setShowExitModal(false);
+              router.push('/dashboard');
+            }}
+          />
+        )}
+
+        {showSameDayModal && (
+          <SameDayWorkoutModal
+            onCancel={() => setShowSameDayModal(false)}
+            onContinue={() => { void finalizeCompleteSession(); }}
+          />
+        )}
+
+        <BiofeedbackSheet
+          open={showBiofeedbackSheet}
+          workoutId={workoutId}
+          onClose={() => {
+            setShowBiofeedbackSheet(false);
+            router.push('/');
+          }}
+          onComplete={() => {
+            setShowBiofeedbackSheet(false);
+            router.push('/');
+          }}
+        />
+
         <button
           type="button"
           onClick={completeSession}

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import api from '@/lib/api/client';
+import { usersApi, type ClassificationResult } from '@/lib/api/users';
 
 // ── COLOUR TOKENS ────────────────────────────────────────────────
 const C = {
@@ -120,6 +120,24 @@ const DOMAIN_COLORS: Record<string, string> = {
   'Self-Regulation':         '#b1c5ff',
 };
 
+const DOMAIN_KEY_LABELS: Record<string, string> = {
+  trainingConsistency: 'Training Consistency',
+  progressionUnderstanding: 'Progression Understanding',
+  recoveryAwareness: 'Recovery Awareness',
+  strengthDevelopment: 'Strength Development',
+  exerciseExecution: 'Exercise Execution',
+  selfRegulation: 'Self-Regulation',
+};
+
+const GENDER_OPTIONS = [
+  { value: 'MALE', label: 'Male' },
+  { value: 'FEMALE', label: 'Female' },
+  { value: 'OTHER', label: 'Other' },
+  { value: 'PREFER_NOT_TO_SAY', label: 'Prefer not to say' },
+];
+
+const DAYS_PER_WEEK_OPTIONS = [3, 4, 5, 6];
+
 // ── UTILITY ──────────────────────────────────────────────────────
 function hexToRgb(hex: string): string {
   const r = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
@@ -127,26 +145,8 @@ function hexToRgb(hex: string): string {
   return `${parseInt(r[1],16)},${parseInt(r[2],16)},${parseInt(r[3],16)}`;
 }
 
-function classifyLevel(answers: number[]) {
-  const domains = [
-    'Training Consistency','Training Consistency',
-    'Progression Understanding','Progression Understanding',
-    'Recovery Awareness','Recovery Awareness',
-    'Strength Development','Strength Development',
-    'Exercise Execution','Exercise Execution',
-    'Self-Regulation','Self-Regulation',
-  ];
-  const domainScores: Record<string,number> = {};
-  let total = 0;
-  answers.forEach((a, i) => {
-    const d = domains[i];
-    domainScores[d] = (domainScores[d] ?? 0) + a;
-    total += a;
-  });
-  let level = 'BEGINNER';
-  if (total >= 28) level = 'ADVANCED';
-  else if (total >= 17) level = 'INTERMEDIATE';
-  return { level, score: total, domainScores };
+function domainLabel(key: string): string {
+  return DOMAIN_KEY_LABELS[key] ?? key;
 }
 
 // ── LOGO ─────────────────────────────────────────────────────────
@@ -258,15 +258,18 @@ function DomainBar({ domain, score, maxScore = 6, visible }: { domain: string; s
 export default function OnboardingPage() {
   const router = useRouter();
 
-  type Phase = 'hero' | 'goal' | 'quiz' | 'result' | 'bodyweight';
+  type Phase = 'hero' | 'goal' | 'quiz' | 'result' | 'profile';
   const [phase, setPhase]             = useState<Phase>('hero');
   const [heroVisible, setHeroVisible] = useState(false);
   const [goalMode, setGoalMode]       = useState('');
+  const [daysPerWeek, setDaysPerWeek] = useState(4);
   const [quizIndex, setQuizIndex]     = useState(0);
   const [answers, setAnswers]         = useState<number[]>(Array(12).fill(-1));
-  const [result, setResult]           = useState<{ level: string; score: number; domainScores: Record<string,number> } | null>(null);
+  const [classification, setClassification] = useState<ClassificationResult | null>(null);
   const [chosenLevel, setChosenLevel] = useState('');
   const [showOverride, setShowOverride] = useState(false);
+  const [gender, setGender] = useState('');
+  const [birthYear, setBirthYear] = useState('');
   const [bodyweightKg, setBodyweightKg] = useState('');
   const [inputFocused, setInputFocused] = useState(false);
   const [loading, setLoading]         = useState(false);
@@ -284,17 +287,46 @@ export default function OnboardingPage() {
     else setBarsVisible(false);
   }, [phase]);
 
-  function advanceQuiz(answerIndex: number) {
+  async function submitQuizToServer(nextAnswers: number[], selectedLevel?: string, overrideAck?: boolean) {
+    const res = await usersApi.submitClassification({
+      answers: nextAnswers,
+      ...(selectedLevel ? { selectedLevel, levelOverrideAcknowledged: overrideAck } : {}),
+    });
+    setClassification(res.data.classification);
+    setChosenLevel(res.data.classification.selectedLevel);
+    return res.data.classification;
+  }
+
+  async function advanceQuiz(answerIndex: number) {
     const next = [...answers];
     next[quizIndex] = answerIndex;
     setAnswers(next);
     if (quizIndex < 11) {
       setTimeout(() => setQuizIndex(q => q + 1), 60);
-    } else {
-      const r = classifyLevel(next);
-      setResult(r);
-      setChosenLevel(r.level);
+      return;
+    }
+    setLoading(true);
+    setError('');
+    try {
+      await submitQuizToServer(next);
       setPhase('result');
+    } catch {
+      setError('Could not save your assessment. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function proceedToProfile(level: string, overrideAck: boolean) {
+    setLoading(true);
+    setError('');
+    try {
+      await submitQuizToServer(answers, level, overrideAck);
+      setPhase('profile');
+    } catch {
+      setError('Could not save your level. Please try again.');
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -303,13 +335,15 @@ export default function OnboardingPage() {
     setLoading(true);
     setError('');
     try {
-      await api.patch('/api/v1/users/me/onboarding', {
+      const dob = birthYear
+        ? new Date(`${birthYear}-06-15`).toISOString()
+        : undefined;
+      await usersApi.completeOnboarding({
         goalMode,
-        experienceLevel: chosenLevel || 'INTERMEDIATE',
+        gender: gender || undefined,
+        dateOfBirth: dob,
         bodyweightKg: bodyweightKg ? parseFloat(bodyweightKg) : undefined,
-        classificationScore: result?.score,
-        recommendedLevel: result?.level,
-        levelOverrideAcknowledged: chosenLevel !== result?.level,
+        daysPerWeek,
       });
       router.push('/dashboard');
     } catch {
@@ -419,7 +453,7 @@ export default function OnboardingPage() {
             This shapes every prescription Kinetiq generates for you.
           </p>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 24 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 20 }}>
             {GOAL_OPTIONS.map(opt => (
               <OptionCard
                 key={opt.value}
@@ -429,6 +463,34 @@ export default function OnboardingPage() {
                 selected={goalMode === opt.value}
                 onClick={() => setGoalMode(opt.value)}
               />
+            ))}
+          </div>
+
+          <p style={{ margin: '0 0 8px', fontSize: '0.57rem', letterSpacing: '0.2em', textTransform: 'uppercase', color: C.outline, fontWeight: 700 }}>
+            Days per week you can train
+          </p>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 24, flexWrap: 'wrap' }}>
+            {DAYS_PER_WEEK_OPTIONS.map((d) => (
+              <button
+                key={d}
+                type="button"
+                onClick={() => setDaysPerWeek(d)}
+                style={{
+                  flex: 1,
+                  minWidth: 56,
+                  padding: '10px 0',
+                  borderRadius: 10,
+                  border: `1px solid ${daysPerWeek === d ? C.primary : C.outlineVariant}`,
+                  background: daysPerWeek === d ? `rgba(${hexToRgb(C.primary)},0.12)` : C.surfaceContainer,
+                  color: daysPerWeek === d ? C.primary : C.onSurfaceVariant,
+                  fontFamily: 'Space Grotesk, sans-serif',
+                  fontWeight: 800,
+                  fontSize: 14,
+                  cursor: 'pointer',
+                }}
+              >
+                {d}
+              </button>
             ))}
           </div>
 
@@ -530,13 +592,14 @@ export default function OnboardingPage() {
   }
 
   // ════ RESULT ══════════════════════════════════════════════════════
-  if (phase === 'result' && result) {
-    const overrideDir = chosenLevel !== result.level
-      ? (['BEGINNER','INTERMEDIATE','ADVANCED'].indexOf(chosenLevel) > ['BEGINNER','INTERMEDIATE','ADVANCED'].indexOf(result.level) ? 'up' : 'down')
+  if (phase === 'result' && classification) {
+    const recommendedLevel = classification.recommendedLevel;
+    const overrideDir = chosenLevel !== recommendedLevel
+      ? (['BEGINNER','INTERMEDIATE','ADVANCED'].indexOf(chosenLevel) > ['BEGINNER','INTERMEDIATE','ADVANCED'].indexOf(recommendedLevel) ? 'up' : 'down')
       : null;
-    const domainEntries = Object.entries(result.domainScores).sort((a,b) => b[1]-a[1]);
-    const highest = domainEntries.slice(0, 2).map(d => d[0]);
-    const lowest  = domainEntries[domainEntries.length - 1][0];
+    const domainEntries = Object.entries(classification.domainScores).sort((a,b) => b[1]-a[1]);
+    const highest = domainEntries.slice(0, 2).map(d => domainLabel(d[0]));
+    const lowest  = domainLabel(domainEntries[domainEntries.length - 1][0]);
 
     return (
       <div style={{ minHeight: '100vh', background: C.surface, color: C.onSurface, fontFamily: 'Manrope, sans-serif', overflowX: 'hidden' }}>
@@ -554,7 +617,7 @@ export default function OnboardingPage() {
           {/* Score bubble */}
           <div style={{ position: 'absolute', top: 18, right: 18, background: 'rgba(17,19,24,0.88)', backdropFilter: 'blur(14px)', border: `1px solid ${C.outlineVariant}`, borderRadius: 14, padding: '12px 16px', textAlign: 'center' }}>
             <span style={{ display: 'block', fontFamily: 'Space Grotesk, sans-serif', fontWeight: 900, fontSize: 26, color: resultAccent, letterSpacing: '-0.04em', lineHeight: 1 }}>
-              <AnimatedScore target={result.score} />
+              <AnimatedScore target={classification.totalScore} />
             </span>
             <span style={{ display: 'block', fontSize: '0.52rem', fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', color: C.outline, marginTop: 2 }}>/ 36</span>
           </div>
@@ -572,10 +635,10 @@ export default function OnboardingPage() {
           {/* Level name */}
           <div style={{ marginTop: 16, marginBottom: 10 }}>
             <h1 style={{ fontFamily: 'Space Grotesk, sans-serif', fontWeight: 900, fontSize: 'clamp(2.2rem,7vw,3rem)', letterSpacing: '-0.05em', lineHeight: 1.0, color: C.onSurface, margin: '0 0 10px' }}>
-              {LEVEL_LABELS[result.level]}
+              {LEVEL_LABELS[recommendedLevel]}
             </h1>
             <p style={{ fontFamily: 'Manrope, sans-serif', fontSize: 13, fontWeight: 500, color: C.onSurfaceVariant, margin: '0 0 14px', lineHeight: 1.6 }}>
-              {LEVEL_SUMMARY[result.level]}
+              {LEVEL_SUMMARY[recommendedLevel]}
             </p>
 
             {/* Personalised explanation */}
@@ -590,8 +653,8 @@ export default function OnboardingPage() {
           {/* Domain breakdown */}
           <div style={{ background: C.surfaceContainer, border: `1px solid ${C.outlineVariant}`, borderRadius: 14, padding: 16, marginBottom: 16 }}>
             <p style={{ margin: '0 0 14px', fontSize: '0.57rem', fontWeight: 700, letterSpacing: '0.22em', textTransform: 'uppercase', color: C.outline }}>Score Breakdown</p>
-            {Object.entries(result.domainScores).map(([domain, score]) => (
-              <DomainBar key={domain} domain={domain} score={score} visible={barsVisible} />
+            {Object.entries(classification.domainScores).map(([domain, score]) => (
+              <DomainBar key={domain} domain={domainLabel(domain)} score={score} visible={barsVisible} />
             ))}
           </div>
 
@@ -599,10 +662,11 @@ export default function OnboardingPage() {
           {!showOverride ? (
             <div style={{ display: 'flex', gap: 10 }}>
               <button
-                onClick={() => setPhase('bodyweight')}
-                style={{ flex: 2, padding: '14px 0', borderRadius: 12, border: 'none', background: `linear-gradient(135deg, ${C.primary} 0%, #3a5cbf 100%)`, color: '#05080f', fontFamily: 'Space Grotesk, sans-serif', fontWeight: 900, fontSize: 13, cursor: 'pointer' }}
+                onClick={() => proceedToProfile(recommendedLevel, false)}
+                disabled={loading}
+                style={{ flex: 2, padding: '14px 0', borderRadius: 12, border: 'none', background: `linear-gradient(135deg, ${C.primary} 0%, #3a5cbf 100%)`, color: '#05080f', fontFamily: 'Space Grotesk, sans-serif', fontWeight: 900, fontSize: 13, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1 }}
               >
-                Accept → {LEVEL_LABELS[result.level]}
+                {loading ? 'Saving...' : `Accept → ${LEVEL_LABELS[recommendedLevel]}`}
               </button>
               <button
                 onClick={() => setShowOverride(true)}
@@ -629,7 +693,7 @@ export default function OnboardingPage() {
                       fontFamily: 'Space Grotesk, sans-serif', fontWeight: 800, fontSize: 13,
                     }}
                   >
-                    {LEVEL_LABELS[lvl]}{lvl === result.level ? '  —  Recommended' : ''}
+                    {LEVEL_LABELS[lvl]}{lvl === recommendedLevel ? '  —  Recommended' : ''}
                   </button>
                 ))}
               </div>
@@ -646,10 +710,11 @@ export default function OnboardingPage() {
               )}
 
               <button
-                onClick={() => setPhase('bodyweight')}
-                style={{ width: '100%', padding: '14px 0', borderRadius: 12, border: 'none', background: `linear-gradient(135deg, ${LEVEL_ACCENT[chosenLevel]} 0%, #3a5cbf 100%)`, color: '#05080f', fontFamily: 'Space Grotesk, sans-serif', fontWeight: 900, fontSize: 13, cursor: 'pointer' }}
+                onClick={() => proceedToProfile(chosenLevel, chosenLevel !== recommendedLevel)}
+                disabled={loading}
+                style={{ width: '100%', padding: '14px 0', borderRadius: 12, border: 'none', background: `linear-gradient(135deg, ${LEVEL_ACCENT[chosenLevel]} 0%, #3a5cbf 100%)`, color: '#05080f', fontFamily: 'Space Grotesk, sans-serif', fontWeight: 900, fontSize: 13, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1 }}
               >
-                Continue as {LEVEL_LABELS[chosenLevel]} →
+                {loading ? 'Saving...' : `Continue as ${LEVEL_LABELS[chosenLevel]} →`}
               </button>
             </div>
           )}
@@ -658,8 +723,8 @@ export default function OnboardingPage() {
     );
   }
 
-  // ════ BODYWEIGHT ═════════════════════════════════════════════════
-  if (phase === 'bodyweight') {
+  // ════ PROFILE ═══════════════════════════════════════════════════
+  if (phase === 'profile') {
     const accent = LEVEL_ACCENT[chosenLevel] ?? C.primary;
     return (
       <div style={{ minHeight: '100vh', background: C.surface, color: C.onSurface, fontFamily: 'Manrope, sans-serif', overflowX: 'hidden', display: 'flex', flexDirection: 'column' }}>
@@ -667,7 +732,7 @@ export default function OnboardingPage() {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px 20px 0', maxWidth: 600, margin: '0 auto', width: '100%' }}>
           <KinetiqLogoWithTealQ />
           <div style={{ display: 'flex', gap: 6 }}>
-            {['Goal','Level','Body'].map((_, i) => (
+            {['Goal','Level','Profile'].map((_, i) => (
               <div key={i} style={{ height: 3, width: i === 2 ? 22 : 12, borderRadius: 100, background: `linear-gradient(90deg, ${C.primary}, ${C.secondary})`, transition: 'all 0.3s' }} />
             ))}
           </div>
@@ -676,8 +741,8 @@ export default function OnboardingPage() {
         <div style={{ maxWidth: 600, margin: '0 auto', padding: '28px 16px 40px', width: '100%', flex: 1, display: 'flex', flexDirection: 'column' }}>
 
           <p style={{ margin: '0 0 6px', fontSize: '0.57rem', letterSpacing: '0.24em', textTransform: 'uppercase', color: C.outline, fontWeight: 700 }}>Final Step</p>
-          <h1 style={{ fontFamily: 'Space Grotesk, sans-serif', fontWeight: 900, fontSize: 'clamp(1.85rem,6vw,2.4rem)', letterSpacing: '-0.045em', lineHeight: 1.05, color: C.onSurface, margin: '0 0 6px' }}>Your bodyweight</h1>
-          <p style={{ fontFamily: 'Manrope, sans-serif', fontWeight: 500, fontSize: 13, color: C.outline, margin: '0 0 22px' }}>Used for fatigue load calculations.</p>
+          <h1 style={{ fontFamily: 'Space Grotesk, sans-serif', fontWeight: 900, fontSize: 'clamp(1.85rem,6vw,2.4rem)', letterSpacing: '-0.045em', lineHeight: 1.05, color: C.onSurface, margin: '0 0 6px' }}>Your profile</h1>
+          <p style={{ fontFamily: 'Manrope, sans-serif', fontWeight: 500, fontSize: 13, color: C.outline, margin: '0 0 22px' }}>Helps calibrate fatigue load and prescriptions.</p>
 
           {/* Calibration summary chip */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 22, background: C.surfaceContainer, border: `1px solid ${C.outlineVariant}`, borderLeft: `3px solid ${accent}`, borderRadius: 12, padding: '12px 14px' }}>
@@ -686,6 +751,51 @@ export default function OnboardingPage() {
               <span style={{ color: accent }}>{LEVEL_LABELS[chosenLevel]}</span>  ·  Goal: <span style={{ color: C.primary }}>{GOAL_OPTIONS.find(g => g.value === goalMode)?.label}</span>
             </span>
           </div>
+
+          <label style={{ display: 'block', fontFamily: 'Manrope, sans-serif', fontSize: 12, fontWeight: 700, color: C.onSurfaceVariant, letterSpacing: '0.04em', marginBottom: 8 }}>
+            Gender
+          </label>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 18 }}>
+            {GENDER_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => setGender(opt.value)}
+                style={{
+                  padding: '8px 12px',
+                  borderRadius: 10,
+                  border: `1px solid ${gender === opt.value ? C.primary : C.outlineVariant}`,
+                  background: gender === opt.value ? `rgba(${hexToRgb(C.primary)},0.1)` : C.surfaceContainer,
+                  color: gender === opt.value ? C.primary : C.onSurfaceVariant,
+                  fontFamily: 'Manrope, sans-serif',
+                  fontWeight: 700,
+                  fontSize: 12,
+                  cursor: 'pointer',
+                }}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+
+          <label style={{ display: 'block', fontFamily: 'Manrope, sans-serif', fontSize: 12, fontWeight: 700, color: C.onSurfaceVariant, letterSpacing: '0.04em', marginBottom: 8 }}>
+            Year of birth
+          </label>
+          <input
+            type="number"
+            value={birthYear}
+            onChange={e => setBirthYear(e.target.value)}
+            placeholder="1995"
+            min={1940}
+            max={new Date().getFullYear() - 13}
+            style={{
+              width: '100%', boxSizing: 'border-box', background: C.surfaceLow,
+              border: `1px solid ${C.outlineVariant}`,
+              borderRadius: 12, padding: '12px 16px', color: C.onSurface,
+              fontFamily: 'Space Grotesk, sans-serif', fontWeight: 700, fontSize: 18,
+              outline: 'none', marginBottom: 18,
+            }}
+          />
 
           <label style={{ display: 'block', fontFamily: 'Manrope, sans-serif', fontSize: 12, fontWeight: 700, color: C.onSurfaceVariant, letterSpacing: '0.04em', marginBottom: 8 }}>
             Bodyweight (kg)
@@ -724,7 +834,7 @@ export default function OnboardingPage() {
 
           <div style={{ marginTop: 'auto', display: 'flex', gap: 10 }}>
             <button
-              onClick={() => setPhase('result')}
+              onClick={() => setPhase('result' as Phase)}
               style={{ flex: 1, padding: '14px 0', borderRadius: 12, border: `1px solid ${C.outlineVariant}`, background: 'transparent', color: C.onSurfaceVariant, fontFamily: 'Manrope, sans-serif', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}
             >
               Back
