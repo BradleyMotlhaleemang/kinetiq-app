@@ -11,6 +11,13 @@ import {
 import { exercisesApi } from '@/lib/api/exercises';
 import api, { ApiError } from '@/lib/api/client';
 import { useSessionStore } from '@/store/session.store';
+import {
+  buildIdempotencyKey,
+  dequeuePendingSet,
+  enqueuePendingSet,
+  getPendingSets,
+  type PendingSetPayload,
+} from '@/lib/session/activeWorkoutCache';
 import { getRepRangeViolation } from '@/lib/programs/programGoal';
 import RepRangeExceededModal from '@/components/RepRangeExceededModal';
 import SameDayWorkoutModal from '@/components/SameDayWorkoutModal';
@@ -968,6 +975,7 @@ export default function WorkoutPage() {
     clearSession,
     prescriptions,
     rehydrate,
+    replaceSet,
     setPrescription,
     setWorkoutId,
   } = useSessionStore();
@@ -1022,8 +1030,11 @@ export default function WorkoutPage() {
   >([]);
   const [exitModalMode, setExitModalMode] = useState<'complete' | 'exit'>('complete');
   const [showPrescriptionOnboarding, setShowPrescriptionOnboarding] = useState(false);
+  const [syncBanner, setSyncBanner] = useState(false);
   const incompleteWarningSuppressed = useRef(false);
   const prescriptionOnboardingChecked = useRef(false);
+  const submittingSetKeys = useRef<Set<string>>(new Set());
+  const hiddenAtRef = useRef<number | null>(null);
 
   // Live timer
   const [elapsedSec, setElapsedSec] = useState(0);
@@ -1036,8 +1047,87 @@ export default function WorkoutPage() {
     loadWorkout();
     loadExercises();
     timerRef.current = setInterval(() => setElapsedSec((s) => s + 1), 1000);
-    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+
+    const handleVisibility = () => {
+      if (document.hidden) {
+        hiddenAtRef.current = Date.now();
+        return;
+      }
+      if (hiddenAtRef.current) {
+        const hiddenMs = Date.now() - hiddenAtRef.current;
+        setElapsedSec((s) => s + Math.floor(hiddenMs / 1000));
+        hiddenAtRef.current = null;
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
   }, [rehydrate, setWorkoutId, workoutId]);
+
+  const drainPendingSets = useCallback(async () => {
+    const pending = getPendingSets(workoutId);
+    if (pending.length === 0) {
+      setSyncBanner(false);
+      return;
+    }
+
+    setSyncBanner(true);
+    for (const item of pending) {
+      try {
+        const res = await workoutsApi.addSet(
+          workoutId,
+          {
+            exerciseId: item.exerciseId,
+            setNumber: item.setNumber,
+            weight: item.weight,
+            reps: item.reps,
+            rpe: item.rpe,
+          },
+          item.idempotencyKey,
+        );
+        replaceSet(item.exerciseId, item.clientId, {
+          id: res.data.id,
+          exerciseId: item.exerciseId,
+          setNumber: item.setNumber,
+          weight: res.data.weight,
+          reps: res.data.reps,
+          rpe: res.data.rpe,
+          e1rm: res.data.e1rm,
+        });
+        dequeuePendingSet(workoutId, item.idempotencyKey);
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 401) return;
+        return;
+      }
+    }
+
+    if (getPendingSets(workoutId).length === 0) {
+      setSyncBanner(false);
+    }
+  }, [addSet, replaceSet, workoutId]);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      if (navigator.onLine) {
+        void drainPendingSets();
+      }
+    }, 20_000);
+
+    const handleOnline = () => {
+      void drainPendingSets();
+    };
+    window.addEventListener('online', handleOnline);
+
+    void drainPendingSets();
+
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener('online', handleOnline);
+    };
+  }, [drainPendingSets]);
 
   useEffect(() => {
     if (hasRehydrated.current) return;
@@ -1069,8 +1159,24 @@ export default function WorkoutPage() {
 
   async function loadWorkout() {
     try {
-      const res = await workoutsApi.findOne(workoutId);
-      const data = res.data;
+      let res = await workoutsApi.findOne(workoutId);
+      let data = res.data as {
+        status?: string;
+        sessionType?: string;
+        splitDayLabel?: string;
+        sets?: Array<{
+          id: string;
+          exerciseId: string;
+          weight: number;
+          reps: number;
+          setNumber: number;
+        }>;
+        programGoal?: string;
+      };
+      if (data?.status === 'PLANNED') {
+        const started = await workoutsApi.start(workoutId);
+        data = started.data as typeof data;
+      }
       setWorkout(data);
       if (typeof data?.sessionType === 'string') {
         setSessionType(data.sessionType);
@@ -1302,37 +1408,88 @@ export default function WorkoutPage() {
     const rows = setRows[exerciseId] ?? [];
     const row = rows[rowIndex];
     if (!row || !row.weight || !row.reps || row.completed) return;
+
+    const weight = parseFloat(row.weight);
+    const reps = parseInt(row.reps, 10);
+    if (Number.isNaN(weight) || Number.isNaN(reps)) return;
+    if (reps <= 0 || reps > 100 || weight < 0 || weight > 500) return;
+
+    const completedCount = (useSessionStore.getState().sets[exerciseId] ?? []).length;
+    const setNumber = completedCount + 1;
+    const idempotencyKey = buildIdempotencyKey(workoutId, exerciseId, setNumber);
+    const submitKey = `${exerciseId}-${rowIndex}`;
+
+    if (submittingSetKeys.current.has(submitKey)) return;
+    submittingSetKeys.current.add(submitKey);
+    window.setTimeout(() => submittingSetKeys.current.delete(submitKey), 600);
+
+    const optimisticId = `pending-${idempotencyKey}`;
+    const optimisticSet = {
+      id: optimisticId,
+      exerciseId,
+      setNumber,
+      weight,
+      reps,
+    };
+
+    addSet(exerciseId, optimisticSet);
+    setSetRows((prev) => ({
+      ...prev,
+      [exerciseId]: (prev[exerciseId] ?? []).map((current, index) =>
+        index === rowIndex ? { ...current, completed: true, id: optimisticId } : current
+      ),
+    }));
+    setRepWarning(null);
+    setWeightWarning(null);
+
+    if (!Number.isNaN(weight)) {
+      historicalBestByExercise.current[exerciseId] = Math.max(
+        historicalBestByExercise.current[exerciseId] ?? 0,
+        weight,
+      );
+    }
+
+    const pendingPayload: PendingSetPayload = {
+      exerciseId,
+      setNumber,
+      weight,
+      reps,
+      idempotencyKey,
+      clientId: optimisticId,
+      createdAt: new Date().toISOString(),
+    };
+    enqueuePendingSet(workoutId, pendingPayload, useSessionStore.getState().sets);
+
     try {
-      const completedCount = (
-        useSessionStore.getState().sets[exerciseId] ?? []
-      ).length;
-      const setNumber = completedCount + 1;
-      const res = await workoutsApi.addSet(workoutId, {
+      const res = await workoutsApi.addSet(
+        workoutId,
+        { exerciseId, setNumber, weight, reps },
+        idempotencyKey,
+      );
+      replaceSet(exerciseId, optimisticId, {
+        id: res.data.id,
         exerciseId,
         setNumber,
-        weight: parseFloat(row.weight),
-        reps: parseInt(row.reps, 10),
+        weight: res.data.weight,
+        reps: res.data.reps,
+        rpe: res.data.rpe,
+        e1rm: res.data.e1rm,
       });
-      addSet(exerciseId, res.data);
+      dequeuePendingSet(workoutId, idempotencyKey);
       setSetRows((prev) => ({
         ...prev,
         [exerciseId]: (prev[exerciseId] ?? []).map((current, index) =>
-          index === rowIndex ? { ...current, completed: true } : current
+          index === rowIndex ? { ...current, id: res.data.id, completed: true } : current
         ),
       }));
-      setRepWarning(null);
-      setWeightWarning(null);
-      const loggedWeight = parseFloat(row.weight);
-      if (!Number.isNaN(loggedWeight)) {
-        historicalBestByExercise.current[exerciseId] = Math.max(
-          historicalBestByExercise.current[exerciseId] ?? 0,
-          loggedWeight,
-        );
+      if (getPendingSets(workoutId).length === 0) {
+        setSyncBanner(false);
       }
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         return;
       }
+      setSyncBanner(true);
       console.error(err);
     }
   }
@@ -1842,6 +1999,22 @@ export default function WorkoutPage() {
           gap: '0',
         }}
       >
+        {syncBanner && (
+          <div
+            style={{
+              marginBottom: 12,
+              padding: '10px 12px',
+              borderRadius: 10,
+              background: 'rgba(255, 193, 7, 0.12)',
+              border: '1px solid rgba(255, 193, 7, 0.35)',
+              color: '#ffd666',
+              fontSize: '0.78rem',
+              lineHeight: 1.4,
+            }}
+          >
+            Weak connection. Retrying in the background…
+          </div>
+        )}
         {/* ── Header ── */}
         <header
           style={{

@@ -1,7 +1,14 @@
 import { create } from 'zustand';
 import { DEV_BYPASS_TOKEN } from '@/lib/auth/devBypass';
+import { refreshAccessToken } from '@/lib/api/client';
+import { authApi } from '@/lib/api/auth';
 
 const SESSION_COOKIE = 'kinetiq_session=1; path=/; max-age=604800; SameSite=Lax';
+
+function hasSessionCookie(): boolean {
+  if (typeof document === 'undefined') return false;
+  return document.cookie.split(';').some((part) => part.trim().startsWith('kinetiq_session=1'));
+}
 
 function setRoleCookie(role: UserRole | null) {
   if (typeof document === 'undefined') return;
@@ -21,6 +28,7 @@ interface AuthState {
   displayName: string | null;
   role: UserRole | null;
   hydrated: boolean;
+  authReady: boolean;
   setAccessToken: (accessToken: string) => void;
   enableDevBypass: () => void;
   setUser: (
@@ -35,6 +43,7 @@ interface AuthState {
   isAuthenticated: () => boolean;
   isAdmin: () => boolean;
   hydrate: () => void;
+  initializeAuth: () => Promise<void>;
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
@@ -44,10 +53,74 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   displayName: null,
   role: null,
   hydrated: false,
+  authReady: false,
 
   hydrate: () => {
     const accessToken = sessionStorage.getItem('accessToken');
     set({ accessToken, hydrated: true });
+  },
+
+  initializeAuth: async () => {
+    const existingToken = sessionStorage.getItem('accessToken');
+    if (existingToken) {
+      set({ accessToken: existingToken, hydrated: true, authReady: true });
+      if (existingToken !== DEV_BYPASS_TOKEN && !get().userId) {
+        try {
+          const res = await authApi.me();
+          const user = res.data as {
+            id?: string;
+            email?: string;
+            displayName?: string | null;
+            role?: UserRole;
+          };
+          if (user?.id && user?.email) {
+            set({
+              userId: user.id,
+              email: user.email,
+              displayName: user.displayName ?? null,
+              role: user.role ?? null,
+            });
+            if (user.role) setRoleCookie(user.role);
+          }
+        } catch {
+          // Token may be expired; refresh flow below handles cookie sessions.
+        }
+      }
+      return;
+    }
+
+    if (hasSessionCookie()) {
+      const refreshed = await refreshAccessToken();
+      if (refreshed) {
+        set({ accessToken: refreshed, hydrated: true });
+        try {
+          const res = await authApi.me();
+          const user = res.data as {
+            id?: string;
+            email?: string;
+            displayName?: string | null;
+            role?: UserRole;
+          };
+          if (user?.id && user?.email) {
+            set({
+              userId: user.id,
+              email: user.email,
+              displayName: user.displayName ?? null,
+              role: user.role ?? null,
+              authReady: true,
+            });
+            if (user.role) setRoleCookie(user.role);
+            return;
+          }
+        } catch {
+          // Fall through to mark ready without user profile.
+        }
+        set({ authReady: true });
+        return;
+      }
+    }
+
+    set({ hydrated: true, authReady: true });
   },
 
   setAccessToken: (accessToken) => {
@@ -63,6 +136,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       accessToken: DEV_BYPASS_TOKEN,
       userId: 'dev-user',
       email: 'dev@local',
+      authReady: true,
+      hydrated: true,
     });
   },
 

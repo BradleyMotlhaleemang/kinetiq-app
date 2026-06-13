@@ -89,7 +89,10 @@ export async function startMesocycleSession(
   program: ExpandProgram,
 ): Promise<string> {
   const targetDay = resolveSessionTarget(program);
-  if (targetDay?.id) return targetDay.id;
+  if (targetDay?.id) {
+    await workoutsApi.start(targetDay.id);
+    return targetDay.id;
+  }
 
   const res = await workoutsApi.create({ mesocycleId });
   const workoutId = (res.data as { id?: string })?.id;

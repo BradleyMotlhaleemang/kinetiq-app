@@ -481,6 +481,7 @@ export default function DashboardPage() {
     setStarting(true);
     try {
       if (targetDay?.id) {
+        await workoutsApi.start(targetDay.id);
         router.push(`/workout/${targetDay.id}`);
         return;
       }

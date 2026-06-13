@@ -1,5 +1,6 @@
 import { DEV_BYPASS_TOKEN } from '@/lib/auth/devBypass';
 import { reportApiError } from '@/lib/sentry/report-api-error';
+import { useAuthStore } from '@/store/auth.store';
 
 /** API origin only - request paths must include `/api/v1/...` (Nest `setGlobalPrefix('api/v1')`). */
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
@@ -21,6 +22,7 @@ export class ApiError extends Error {
 type RequestOptions = {
   auth?: boolean;
   credentials?: boolean;
+  headers?: Record<string, string>;
 };
 
 function getToken() {
@@ -95,6 +97,7 @@ async function tryRefreshToken(): Promise<string | null> {
       const accessToken = data?.accessToken as string | undefined;
       if (accessToken && typeof window !== 'undefined') {
         sessionStorage.setItem('accessToken', accessToken);
+        useAuthStore.getState().setAccessToken(accessToken);
       }
       return accessToken ?? null;
     } catch {
@@ -107,6 +110,10 @@ async function tryRefreshToken(): Promise<string | null> {
   return refreshPromise;
 }
 
+export async function refreshAccessToken(): Promise<string | null> {
+  return tryRefreshToken();
+}
+
 async function request(
   method: string,
   path: string,
@@ -117,6 +124,7 @@ async function request(
   const token = useAuth ? getToken() : null;
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
+    ...options.headers,
   };
   if (token) headers['Authorization'] = `Bearer ${token}`;
 

@@ -65,6 +65,8 @@ export const workoutsApi = {
   create: (data: { mesocycleId?: string; splitDayLabel?: string }) =>
     api.post('/api/v1/workouts', data),
 
+  start: (workoutId: string) => api.patch(`/api/v1/workouts/${workoutId}/start`),
+
   findOne: (id: string) => api.get(`/api/v1/workouts/${id}`),
 
   findActive: () => api.get('/api/v1/workouts/active'),
@@ -112,7 +114,11 @@ export const workoutsApi = {
       reps: number;
       rpe?: number;
     },
-  ) => api.post(`/api/v1/workouts/${workoutId}/sets`, data),
+    idempotencyKey?: string,
+  ) =>
+    api.post(`/api/v1/workouts/${workoutId}/sets`, data, {
+      headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
+    }),
 
   complete: (workoutId: string) =>
     api.patch(`/api/v1/workouts/${workoutId}/complete`),

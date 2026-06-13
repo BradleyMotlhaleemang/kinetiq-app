@@ -1,5 +1,10 @@
 import { create } from 'zustand';
 import type { Prescription } from '@/lib/api/workouts';
+import {
+  clearActiveWorkout,
+  loadActiveWorkout,
+  saveActiveWorkout,
+} from '@/lib/session/activeWorkoutCache';
 
 export type { Prescription };
 
@@ -26,23 +31,24 @@ interface SessionState {
   sets: Record<string, SetLog[]>;
   prescriptions: Record<string, Prescription>;
   setWorkoutId: (id: string) => void;
-
-  // Used in app/workout/[id]/page.tsx (handleSetComplete) to append a logged set
-  // to the in-memory session after a successful POST /workouts/:id/sets.
   addSet: (exerciseId: string, set: SetLog) => void;
-
-  // Used in app/workout/[id]/page.tsx (fetchPrescriptionForExercise) to cache
-  // the engine's per-exercise prescription returned by
-  // GET /workouts/:id/prescription.
+  replaceSet: (exerciseId: string, clientId: string, set: SetLog) => void;
   setPrescription: (exerciseId: string, prescription: Prescription) => void;
-
   rehydrate: (workoutId: string) => void;
-
   hydrateFromServer: (serverSets: ServerSet[]) => void;
-
-  // Used in app/workout/[id]/page.tsx (completeSession) to reset the session
-  // state before navigating away after a workout is finished.
   clearSession: () => void;
+  persistSnapshot: () => void;
+  getSetsSnapshot: () => Record<string, SetLog[]>;
+}
+
+function persistToStorage(workoutId: string, sets: Record<string, SetLog[]>) {
+  const existing = loadActiveWorkout(workoutId);
+  saveActiveWorkout({
+    workoutId,
+    sets,
+    pendingSets: existing?.pendingSets ?? [],
+    updatedAt: new Date().toISOString(),
+  });
 }
 
 export const useSessionStore = create<SessionState>((set, get) => ({
@@ -69,11 +75,27 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
     const currentWorkoutId = get().workoutId;
     if (currentWorkoutId) {
-      const updatedSets = get().sets;
-      sessionStorage.setItem(
-        `kinetiq_session_sets_${currentWorkoutId}`,
-        JSON.stringify(updatedSets)
+      persistToStorage(currentWorkoutId, get().sets);
+    }
+  },
+
+  replaceSet: (exerciseId, clientId, nextSet) => {
+    set((state) => {
+      const bucket = state.sets[exerciseId] ?? [];
+      const withoutDupes = bucket.filter(
+        (item) => item.id !== clientId && item.setNumber !== nextSet.setNumber,
       );
+      return {
+        sets: {
+          ...state.sets,
+          [exerciseId]: [...withoutDupes, nextSet],
+        },
+      };
+    });
+
+    const currentWorkoutId = get().workoutId;
+    if (currentWorkoutId) {
+      persistToStorage(currentWorkoutId, get().sets);
     }
   },
 
@@ -83,19 +105,9 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     })),
 
   rehydrate: (workoutId) => {
-    try {
-      const stored = sessionStorage.getItem(
-        `kinetiq_session_sets_${workoutId}`
-      );
-      if (!stored) return;
-      const parsed = JSON.parse(stored);
-      if (!parsed) return;
-      set({
-        sets: parsed,
-      });
-    } catch {
-      return;
-    }
+    const snapshot = loadActiveWorkout(workoutId);
+    if (!snapshot?.sets) return;
+    set({ sets: snapshot.sets, workoutId });
   },
 
   hydrateFromServer: (serverSets) => {
@@ -135,26 +147,27 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
     const currentWorkoutId = get().workoutId;
     if (currentWorkoutId) {
-      sessionStorage.setItem(
-        `kinetiq_session_sets_${currentWorkoutId}`,
-        JSON.stringify(get().sets)
-      );
+      persistToStorage(currentWorkoutId, get().sets);
     }
   },
 
   clearSession: () => {
+    const currentWorkoutId = get().workoutId;
+    if (currentWorkoutId) {
+      clearActiveWorkout(currentWorkoutId);
+    }
     set({
       sets: {},
       prescriptions: {},
-    });
-    const currentWorkoutId = get().workoutId;
-    if (currentWorkoutId) {
-      sessionStorage.removeItem(
-        `kinetiq_session_sets_${currentWorkoutId}`
-      );
-    }
-    set({
       workoutId: null,
     });
   },
+
+  persistSnapshot: () => {
+    const currentWorkoutId = get().workoutId;
+    if (!currentWorkoutId) return;
+    persistToStorage(currentWorkoutId, get().sets);
+  },
+
+  getSetsSnapshot: () => get().sets,
 }));
